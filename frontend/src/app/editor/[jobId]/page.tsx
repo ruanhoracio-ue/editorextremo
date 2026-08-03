@@ -751,10 +751,10 @@ export default function EditorPage({
                         <p className="mt-0.5 text-[10px] text-slate-500 font-geist">Edite o texto das frases para ajustar o vídeo</p>
                       </div>
                       <div className="flex gap-2">
-                        <button onClick={copyTranscriptText} className="rounded-lg border border-cyan-400/30 bg-cyan-400/10 px-3 py-1.5 text-xs font-medium text-cyan-200 hover:bg-cyan-400/20 font-geist">
+                        <button onClick={copyTranscriptText} className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20">
                           {copiedTx ? "✓ Copiado!" : "📋 Copiar Texto"}
                         </button>
-                        <button onClick={downloadTranscriptTxt} className="rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-1.5 text-xs font-medium text-emerald-200 hover:bg-emerald-400/20 font-geist">
+                        <button onClick={downloadTranscriptTxt} className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20">
                           ⬇️ Baixar TXT
                         </button>
                       </div>
@@ -762,18 +762,18 @@ export default function EditorPage({
 
                     <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
                       {localTranscript.map((seg, i) => (
-                        <div key={i} className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-3 hover:border-white/10">
-                          <div className="mb-1 flex items-center justify-between text-[10px] text-slate-500 font-geist">
-                            <span onClick={() => handleSeek(seg.start)} className="cursor-pointer text-cyan-400/80 hover:underline">
+                        <div key={i} className="rounded-xl border border-[#262626] bg-[#0a0a0a]/60 p-3 hover:border-emerald-500/30">
+                          <div className="mb-1 flex items-center justify-between text-[10px] text-[#737373]">
+                            <span onClick={() => handleSeek(seg.start)} className="cursor-pointer text-emerald-400 hover:underline">
                               {formatTime(seg.start)} → {formatTime(seg.end)}
                             </span>
-                            <span className="text-cyan-400 font-bold">#{i + 1}</span>
+                            <span className="text-emerald-400 font-bold">#{i + 1}</span>
                           </div>
                           <input
                             type="text"
                             value={seg.text}
                             onChange={(e) => handleTranscriptTextChange(i, e.target.value)}
-                            className="w-full rounded-lg border border-white/[0.08] bg-black/40 px-3 py-1.5 text-sm text-white focus:border-cyan-400 focus:outline-none font-geist"
+                            className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-1.5 text-sm text-[#fafafa] focus:border-emerald-400 focus:outline-none"
                           />
                         </div>
                       ))}
@@ -793,7 +793,7 @@ export default function EditorPage({
 
                 {/* 1. TIPO DE EDIÇÃO */}
                 <div className="space-y-3">
-                  <label className="text-xs font-black uppercase tracking-wider text-cyan-400 font-geist">TIPO DE EDIÇÃO</label>
+                  <label className="text-xs font-bold uppercase tracking-wider text-emerald-400">TIPO DE EDIÇÃO</label>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     {[
                       { id: "fullscreen", title: "Limpinho", desc: "Vídeo único 1080x1920 tela cheia", icon: "📱" },
@@ -808,15 +808,15 @@ export default function EditorPage({
                         }}
                         className={`group relative cursor-pointer rounded-2xl border p-5 transition-all ${
                           (style.layout === "fullscreen" && t.id === "fullscreen") || (style.layout === "split_screen" && t.id !== "fullscreen")
-                            ? "border-cyan-400 bg-cyan-400/10 shadow-lg shadow-cyan-500/10 scale-[1.02]"
-                            : "border-white/10 bg-[#0E121E] hover:border-white/20 hover:bg-white/[0.04]"
+                            ? "border-emerald-400 bg-emerald-500/10 shadow-lg shadow-emerald-500/10 scale-[1.02]"
+                            : "border-[#262626] bg-[#171717] hover:border-[#404040]"
                         }`}
                       >
                         <div className="mb-3 text-3xl">{t.icon}</div>
-                        <div className="font-jakarta text-base font-bold text-white">{t.title}</div>
-                        <div className="mt-1 text-xs text-slate-400 font-geist">{t.desc}</div>
+                        <div className="text-base font-bold text-white">{t.title}</div>
+                        <div className="mt-1 text-xs text-[#a8a8a8]">{t.desc}</div>
                         {((style.layout === "fullscreen" && t.id === "fullscreen") || (style.layout === "split_screen" && t.id !== "fullscreen")) && (
-                          <span className="absolute top-3 right-3 flex h-6 w-6 items-center justify-center rounded-full bg-cyan-400 text-black text-xs font-bold">
+                          <span className="absolute top-3 right-3 flex h-6 w-6 items-center justify-center rounded-full bg-brand-gradient text-[#0a0a0a] text-xs font-bold">
                             ✓
                           </span>
                         )}
@@ -826,11 +826,11 @@ export default function EditorPage({
                   <input ref={splitInputRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={handleSplitImagesUpload} />
 
                   {style.layout === "split_screen" && (
-                    <div className="mt-3 rounded-2xl border border-white/10 bg-[#0E121E] p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="mt-3 rounded-2xl border border-[#262626] bg-[#171717] p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
                       <div className="flex-1 w-full">
-                        <div className="flex justify-between items-center mb-1 text-xs text-slate-300 font-geist">
+                        <div className="flex justify-between items-center mb-1 text-xs text-[#a8a8a8]">
                           <span>↕️ Enquadramento Mídia Topo:</span>
-                          <span className="font-mono text-cyan-300 font-bold">{Math.round(framingYPercent)}%</span>
+                          <span className="font-mono text-emerald-400 font-bold">{Math.round(framingYPercent)}%</span>
                         </div>
                         <input
                           type="range"
@@ -838,11 +838,12 @@ export default function EditorPage({
                           max="100"
                           value={framingYPercent}
                           onChange={(e) => updateStyleAndPersist((s) => ({ ...s, split_screen_framing_y: parseFloat(e.target.value) }))}
-                          className="w-full accent-cyan-400 cursor-pointer"
+                          className="w-full accent-emerald-400 cursor-pointer"
                         />
                       </div>
-                      <button onClick={handleAutoBroll} disabled={isAutoBrolling} className="btn-primary btn-pill text-xs whitespace-nowrap">
-                        {isAutoBrolling ? "🤖 Buscando B-Roll..." : "🤖 Gerar Auto B-Roll IA"}
+                      <button onClick={handleAutoBroll} disabled={isAutoBrolling} className="shiny-cta px-4 py-2 text-xs font-bold whitespace-nowrap">
+                        <span className="shiny-dots" aria-hidden="true" />
+                        <span className="shiny-cta-content text-white">{isAutoBrolling ? "🤖 Buscando B-Roll..." : "🤖 Gerar Auto B-Roll IA"}</span>
                       </button>
                     </div>
                   )}
@@ -850,8 +851,8 @@ export default function EditorPage({
 
                 {/* 2. COR DE DESTAQUE */}
                 <div className="space-y-3">
-                  <label className="text-xs font-black uppercase tracking-wider text-cyan-400 font-geist">COR DE DESTAQUE</label>
-                  <div className="flex items-center gap-4 rounded-2xl border border-white/10 bg-[#0E121E] p-4">
+                  <label className="text-xs font-bold uppercase tracking-wider text-emerald-400">COR DE DESTAQUE</label>
+                  <div className="flex items-center gap-4 rounded-2xl border border-[#262626] bg-[#171717] p-4">
                     <div className="flex items-center gap-3">
                       <input
                         type="color"
@@ -860,11 +861,11 @@ export default function EditorPage({
                           setHighlightColor(e.target.value);
                           updateStyleAndPersist((s) => ({ ...s, subtitle_color: e.target.value }));
                         }}
-                        className="h-10 w-10 cursor-pointer rounded-xl border border-white/20 bg-transparent p-0.5"
+                        className="h-10 w-10 cursor-pointer rounded-xl border border-[#262626] bg-transparent p-0.5"
                       />
                       <div>
-                        <span className="block text-[11px] font-medium text-slate-400 font-geist">Seletor Geral de Cor:</span>
-                        <span className="font-mono text-sm font-bold text-cyan-300 uppercase font-geist">{highlightColor}</span>
+                        <span className="block text-[11px] font-medium text-[#a8a8a8]">Seletor Geral de Cor:</span>
+                        <span className="font-mono text-sm font-bold text-emerald-400 uppercase">{highlightColor}</span>
                       </div>
                     </div>
                   </div>
@@ -872,16 +873,16 @@ export default function EditorPage({
 
                 {/* 3. ESTILO DE HEADLINE */}
                 <div className="space-y-3">
-                  <label className="text-xs font-black uppercase tracking-wider text-cyan-400 font-geist">ESTILO DE HEADLINE (TÍTULO DE TOPO)</label>
-                  <div className="rounded-2xl border border-white/10 bg-[#0E121E] p-5 space-y-4">
+                  <label className="text-xs font-bold uppercase tracking-wider text-emerald-400">ESTILO DE HEADLINE (TÍTULO DE TOPO)</label>
+                  <div className="rounded-2xl border border-[#262626] bg-[#171717] p-5 space-y-4">
                     <input
                       type="text"
-                      placeholder="Digite a sua headline de topo aqui (Ex: É ASSIM QUE VAI FICAR A SUA HEADLINE)..."
+                      placeholder="Digite a sua headline de topo aqui..."
                       value={headlineText}
                       onChange={(e) => setHeadlineText(e.target.value)}
-                      className="w-full rounded-xl border border-white/10 bg-black/50 px-4 py-3 text-sm text-white focus:border-cyan-400 focus:outline-none font-geist"
+                      className="w-full rounded-xl border border-[#262626] bg-[#0a0a0a] px-4 py-3 text-sm text-[#fafafa] focus:border-emerald-400 focus:outline-none"
                     />
-                    <div className="p-3 text-center font-jakarta text-sm font-black text-white uppercase tracking-wider drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)]">
+                    <div className="p-3 text-center text-sm font-bold text-white uppercase tracking-wider drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)]">
                       {headlineText || "É ASSIM QUE VAI FICAR A SUA HEADLINE"}
                     </div>
                   </div>
@@ -889,11 +890,11 @@ export default function EditorPage({
 
                 {/* 4. ESTILO DE LEGENDA */}
                 <div className="space-y-3">
-                  <label className="text-xs font-black uppercase tracking-wider text-cyan-400 font-geist">ESTILO DE LEGENDA</label>
+                  <label className="text-xs font-bold uppercase tracking-wider text-emerald-400">ESTILO DE LEGENDA</label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     {[
                       { key: "andromeda" as SubtitleTheme, label: "⬛ Andromeda", bg: "bg-black text-white" },
-                      { key: "energy" as SubtitleTheme, label: "⬜ Energy", bg: "bg-white text-black font-black" },
+                      { key: "energy" as SubtitleTheme, label: "⬜ Energy", bg: "bg-white text-black font-bold" },
                       { key: "million" as SubtitleTheme, label: "💎 Million", bg: "bg-black/60 text-yellow-300 drop-shadow-md" },
                       { key: "minimal_white" as SubtitleTheme, label: "⚪ Limpo Minimal", bg: "bg-black/40 text-white" },
                     ].map((p) => (
@@ -902,14 +903,14 @@ export default function EditorPage({
                         onClick={() => applyPresetTheme(p.key)}
                         className={`cursor-pointer rounded-2xl border p-4 transition-all text-center ${
                           style.subtitle_theme === p.key
-                            ? "border-cyan-400 bg-cyan-400/10 shadow-lg shadow-cyan-500/10 scale-[1.02]"
-                            : "border-white/10 bg-[#0E121E] hover:border-white/20"
+                            ? "border-emerald-400 bg-emerald-500/10 shadow-lg shadow-emerald-500/10 scale-[1.02]"
+                            : "border-[#262626] bg-[#171717] hover:border-[#404040]"
                         }`}
                       >
                         <div className={`mx-auto rounded-xl p-3 text-xs font-bold ${p.bg}`}>
                           É assim que sua legenda irá aparecer
                         </div>
-                        <div className="mt-3 text-xs font-bold text-slate-300 font-geist">{p.label}</div>
+                        <div className="mt-3 text-xs font-bold text-[#fafafa]">{p.label}</div>
                       </div>
                     ))}
                   </div>
@@ -917,7 +918,7 @@ export default function EditorPage({
 
                 {/* 5. ELEMENTOS DA EDIÇÃO */}
                 <div className="space-y-3">
-                  <label className="text-xs font-black uppercase tracking-wider text-cyan-400 font-geist">ELEMENTOS DA EDIÇÃO</label>
+                  <label className="text-xs font-bold uppercase tracking-wider text-emerald-400">ELEMENTOS DA EDIÇÃO</label>
                   <div className="flex flex-wrap items-center gap-3">
                     {[
                       {
@@ -948,13 +949,13 @@ export default function EditorPage({
                       <button
                         key={item.key}
                         onClick={item.toggle}
-                        className={`flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-xs font-bold transition-all font-geist ${
+                        className={`flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-xs font-bold transition-all ${
                           item.active
-                            ? "border-cyan-400/50 bg-cyan-400/10 text-cyan-200 shadow-lg shadow-cyan-500/10"
-                            : "border-white/10 bg-[#0E121E] text-slate-400 hover:text-white"
+                            ? "border-emerald-400 bg-emerald-500/10 text-emerald-300 shadow-lg shadow-emerald-500/10"
+                            : "border-[#262626] bg-[#171717] text-[#a8a8a8] hover:text-white"
                         }`}
                       >
-                        <span className={`flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold ${item.active ? "bg-cyan-400 text-slate-950" : "bg-white/10 text-slate-500"}`}>
+                        <span className={`flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold ${item.active ? "bg-emerald-400 text-[#0a0a0a]" : "bg-white/10 text-slate-500"}`}>
                           ✓
                         </span>
                         <span>{item.label}</span>
@@ -964,12 +965,12 @@ export default function EditorPage({
                 </div>
 
                 {/* 6. CONTROLES RIGOROSOS DE TEXTO */}
-                <div className="rounded-2xl border border-white/10 bg-[#0E121E] p-6 space-y-4">
-                  <label className="text-xs font-black uppercase tracking-wider text-cyan-400 font-geist">CONTROLES RIGOROSOS DE TEXTO</label>
+                <div className="rounded-2xl border border-[#262626] bg-[#171717] p-6 space-y-4">
+                  <label className="text-xs font-bold uppercase tracking-wider text-emerald-400">CONTROLES RIGOROSOS DE TEXTO</label>
                   
                   {/* Fonte Tipográfica */}
                   <div>
-                    <span className="block text-xs font-medium text-slate-400 mb-1.5 font-geist">Fonte da Legenda:</span>
+                    <span className="block text-xs font-medium text-[#a8a8a8] mb-1.5">Fonte da Legenda:</span>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       {[
                         { name: "The Bold Font", label: "The Bold Font (Anton)" },
@@ -983,10 +984,10 @@ export default function EditorPage({
                         <button
                           key={f.name}
                           onClick={() => updateStyleAndPersist((s) => ({ ...s, subtitle_font: f.name as any }))}
-                          className={`rounded-xl border py-2 px-3 text-xs font-bold transition font-geist ${
+                          className={`rounded-xl border py-2 px-3 text-xs font-bold transition ${
                             style.subtitle_font === f.name
-                              ? "border-cyan-400 bg-cyan-400/20 text-cyan-300"
-                              : "border-white/10 bg-black/40 text-slate-400 hover:text-white"
+                              ? "border-emerald-400 bg-emerald-500/20 text-emerald-300"
+                              : "border-[#262626] bg-[#0a0a0a] text-[#a8a8a8] hover:text-white"
                           }`}
                         >
                           {f.label}
@@ -997,16 +998,16 @@ export default function EditorPage({
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
                     <div>
-                      <span className="block text-xs font-medium text-slate-400 mb-1.5 font-geist">Linhas da Legenda:</span>
+                      <span className="block text-xs font-medium text-[#a8a8a8] mb-1.5">Linhas da Legenda:</span>
                       <div className="grid grid-cols-2 gap-2">
                         {[1, 2].map((lines) => (
                           <button
                             key={lines}
                             onClick={() => updateStyleAndPersist((s) => ({ ...s, subtitle_max_lines: lines }))}
-                            className={`rounded-xl border py-2 text-xs font-bold transition font-geist ${
+                            className={`rounded-xl border py-2 text-xs font-bold transition ${
                               style.subtitle_max_lines === lines
-                                ? "border-cyan-400 bg-cyan-400/20 text-cyan-300"
-                                : "border-white/10 bg-black/40 text-slate-400 hover:text-white"
+                                ? "border-emerald-400 bg-emerald-500/20 text-emerald-300"
+                                : "border-[#262626] bg-[#0a0a0a] text-[#a8a8a8] hover:text-white"
                             }`}
                           >
                             {lines} {lines === 1 ? "Linha (Exata)" : "Linhas (Máx 2)"}
@@ -1016,9 +1017,9 @@ export default function EditorPage({
                     </div>
 
                     <div>
-                      <div className="flex justify-between text-xs text-slate-400 mb-1.5 font-geist">
+                      <div className="flex justify-between text-xs text-[#a8a8a8] mb-1.5">
                         <span>Tamanho da Fonte:</span>
-                        <span className="font-mono text-cyan-300 font-bold">{style.subtitle_font_size || 58}px</span>
+                        <span className="font-mono text-emerald-400 font-bold">{style.subtitle_font_size || 58}px</span>
                       </div>
                       <input
                         type="range"
@@ -1026,14 +1027,14 @@ export default function EditorPage({
                         max="90"
                         value={style.subtitle_font_size || 58}
                         onChange={(e) => updateStyleAndPersist((s) => ({ ...s, subtitle_font_size: parseInt(e.target.value) }))}
-                        className="w-full accent-cyan-400 cursor-pointer"
+                        className="w-full accent-emerald-400 cursor-pointer"
                       />
                     </div>
 
                     <div>
-                      <div className="flex justify-between text-xs text-slate-400 mb-1.5 font-geist">
+                      <div className="flex justify-between text-xs text-[#a8a8a8] mb-1.5">
                         <span>Letras por Linha:</span>
-                        <span className="font-mono text-cyan-300 font-bold">{style.subtitle_max_chars_per_line || 25}</span>
+                        <span className="font-mono text-emerald-400 font-bold">{style.subtitle_max_chars_per_line || 25}</span>
                       </div>
                       <input
                         type="range"
@@ -1041,14 +1042,14 @@ export default function EditorPage({
                         max="45"
                         value={style.subtitle_max_chars_per_line || 25}
                         onChange={(e) => updateStyleAndPersist((s) => ({ ...s, subtitle_max_chars_per_line: parseInt(e.target.value) }))}
-                        className="w-full accent-cyan-400 cursor-pointer"
+                        className="w-full accent-emerald-400 cursor-pointer"
                       />
                     </div>
 
                     <div>
-                      <div className="flex justify-between text-xs text-slate-400 mb-1.5 font-geist">
+                      <div className="flex justify-between text-xs text-[#a8a8a8] mb-1.5">
                         <span>Espaçamento de Letras:</span>
-                        <span className="font-mono text-cyan-300 font-bold">{style.subtitle_letter_spacing || 0}px</span>
+                        <span className="font-mono text-emerald-400 font-bold">{style.subtitle_letter_spacing || 0}px</span>
                       </div>
                       <input
                         type="range"
@@ -1056,16 +1057,16 @@ export default function EditorPage({
                         max="12"
                         value={style.subtitle_letter_spacing || 0}
                         onChange={(e) => updateStyleAndPersist((s) => ({ ...s, subtitle_letter_spacing: parseInt(e.target.value) }))}
-                        className="w-full accent-cyan-400 cursor-pointer"
+                        className="w-full accent-emerald-400 cursor-pointer"
                       />
                     </div>
                   </div>
                 </div>
 
                 {/* 7. PAINEL PROFISSIONAL DE COLOR GRADING */}
-                <div className="rounded-2xl border border-white/10 bg-[#0E121E] p-6 space-y-4">
+                <div className="rounded-2xl border border-[#262626] bg-[#171717] p-6 space-y-4">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-black uppercase tracking-wider text-cyan-400 font-geist">🎨 COLOR GRADING & TRATAMENTO DE IMAGEM</label>
+                    <label className="text-xs font-bold uppercase tracking-wider text-emerald-400">🎨 COLOR GRADING & TRATAMENTO DE IMAGEM</label>
                     <div className="flex gap-2">
                       {[
                         { label: "Vívido", grade: { contrast: 1.25, saturation: 1.35, brightness: 1.05, warmth: 0.0 } },
@@ -1078,7 +1079,7 @@ export default function EditorPage({
                           onClick={() => {
                             Object.entries(preset.grade).forEach(([k, v]) => handleGradeChange(k as any, v));
                           }}
-                          className="rounded-lg border border-white/10 bg-black/40 px-2.5 py-1 text-[11px] font-bold text-slate-300 hover:text-cyan-300 font-geist"
+                          className="rounded-lg border border-[#262626] bg-[#0a0a0a] px-2.5 py-1 text-[11px] font-bold text-[#a8a8a8] hover:text-emerald-300"
                         >
                           {preset.label}
                         </button>
@@ -1088,9 +1089,9 @@ export default function EditorPage({
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-1">
                     <div>
-                      <div className="flex justify-between text-xs text-slate-400 mb-1 font-geist">
+                      <div className="flex justify-between text-xs text-[#a8a8a8] mb-1">
                         <span>Contraste:</span>
-                        <span className="font-mono text-cyan-300 font-bold">{Math.round((style.color_grade?.contrast ?? 1.0) * 100)}%</span>
+                        <span className="font-mono text-emerald-400 font-bold">{Math.round((style.color_grade?.contrast ?? 1.0) * 100)}%</span>
                       </div>
                       <input
                         type="range"
@@ -1099,14 +1100,14 @@ export default function EditorPage({
                         step="0.05"
                         value={style.color_grade?.contrast ?? 1.0}
                         onChange={(e) => handleGradeChange("contrast", parseFloat(e.target.value))}
-                        className="w-full accent-cyan-400 cursor-pointer"
+                        className="w-full accent-emerald-400 cursor-pointer"
                       />
                     </div>
 
                     <div>
-                      <div className="flex justify-between text-xs text-slate-400 mb-1 font-geist">
+                      <div className="flex justify-between text-xs text-[#a8a8a8] mb-1">
                         <span>Saturação:</span>
-                        <span className="font-mono text-cyan-300 font-bold">{Math.round((style.color_grade?.saturation ?? 1.0) * 100)}%</span>
+                        <span className="font-mono text-emerald-400 font-bold">{Math.round((style.color_grade?.saturation ?? 1.0) * 100)}%</span>
                       </div>
                       <input
                         type="range"
@@ -1115,14 +1116,14 @@ export default function EditorPage({
                         step="0.05"
                         value={style.color_grade?.saturation ?? 1.0}
                         onChange={(e) => handleGradeChange("saturation", parseFloat(e.target.value))}
-                        className="w-full accent-cyan-400 cursor-pointer"
+                        className="w-full accent-emerald-400 cursor-pointer"
                       />
                     </div>
 
                     <div>
-                      <div className="flex justify-between text-xs text-slate-400 mb-1 font-geist">
+                      <div className="flex justify-between text-xs text-[#a8a8a8] mb-1">
                         <span>Brilho:</span>
-                        <span className="font-mono text-cyan-300 font-bold">{Math.round((style.color_grade?.brightness ?? 1.0) * 100)}%</span>
+                        <span className="font-mono text-emerald-400 font-bold">{Math.round((style.color_grade?.brightness ?? 1.0) * 100)}%</span>
                       </div>
                       <input
                         type="range"
@@ -1131,14 +1132,14 @@ export default function EditorPage({
                         step="0.05"
                         value={style.color_grade?.brightness ?? 1.0}
                         onChange={(e) => handleGradeChange("brightness", parseFloat(e.target.value))}
-                        className="w-full accent-cyan-400 cursor-pointer"
+                        className="w-full accent-emerald-400 cursor-pointer"
                       />
                     </div>
 
                     <div>
-                      <div className="flex justify-between text-xs text-slate-400 mb-1 font-geist">
+                      <div className="flex justify-between text-xs text-[#a8a8a8] mb-1">
                         <span>Temperatura (Warmth):</span>
-                        <span className="font-mono text-cyan-300 font-bold">{Math.round((style.color_grade?.warmth ?? 0.0) * 100)}</span>
+                        <span className="font-mono text-emerald-400 font-bold">{Math.round((style.color_grade?.warmth ?? 0.0) * 100)}</span>
                       </div>
                       <input
                         type="range"
@@ -1147,14 +1148,14 @@ export default function EditorPage({
                         step="0.05"
                         value={style.color_grade?.warmth ?? 0.0}
                         onChange={(e) => handleGradeChange("warmth", parseFloat(e.target.value))}
-                        className="w-full accent-cyan-400 cursor-pointer"
+                        className="w-full accent-emerald-400 cursor-pointer"
                       />
                     </div>
 
                     <div>
-                      <div className="flex justify-between text-xs text-slate-400 mb-1 font-geist">
+                      <div className="flex justify-between text-xs text-[#a8a8a8] mb-1">
                         <span>Intensidade Geral:</span>
-                        <span className="font-mono text-cyan-300 font-bold">{Math.round((style.color_grade?.intensity ?? 1.0) * 100)}%</span>
+                        <span className="font-mono text-emerald-400 font-bold">{Math.round((style.color_grade?.intensity ?? 1.0) * 100)}%</span>
                       </div>
                       <input
                         type="range"
@@ -1163,14 +1164,14 @@ export default function EditorPage({
                         step="0.05"
                         value={style.color_grade?.intensity ?? 1.0}
                         onChange={(e) => handleGradeChange("intensity", parseFloat(e.target.value))}
-                        className="w-full accent-cyan-400 cursor-pointer"
+                        className="w-full accent-emerald-400 cursor-pointer"
                       />
                     </div>
 
                     <div>
-                      <div className="flex justify-between text-xs text-slate-400 mb-1 font-geist">
+                      <div className="flex justify-between text-xs text-[#a8a8a8] mb-1">
                         <span>Nitidez (Sharpness):</span>
-                        <span className="font-mono text-cyan-300 font-bold">{Math.round((style.color_grade?.sharpness ?? 0.0) * 100)}</span>
+                        <span className="font-mono text-emerald-400 font-bold">{Math.round((style.color_grade?.sharpness ?? 0.0) * 100)}</span>
                       </div>
                       <input
                         type="range"
@@ -1179,16 +1180,16 @@ export default function EditorPage({
                         step="0.05"
                         value={style.color_grade?.sharpness ?? 0.0}
                         onChange={(e) => handleGradeChange("sharpness", parseFloat(e.target.value))}
-                        className="w-full accent-cyan-400 cursor-pointer"
+                        className="w-full accent-emerald-400 cursor-pointer"
                       />
                     </div>
                   </div>
                 </div>
 
                 {/* 8. ADAPTAÇÃO DE FORMATO DE VÍDEO */}
-                <div className="rounded-2xl border border-white/10 bg-[#0E121E] p-6 space-y-4">
-                  <label className="text-xs font-black uppercase tracking-wider text-cyan-400 font-geist">📐 ADAPTAÇÃO DE FORMATO DE VÍDEO</label>
-                  <p className="text-xs text-slate-400 font-geist">
+                <div className="rounded-2xl border border-[#262626] bg-[#171717] p-6 space-y-4">
+                  <label className="text-xs font-bold uppercase tracking-wider text-emerald-400">📐 ADAPTAÇÃO DE FORMATO DE VÍDEO</label>
+                  <p className="text-xs text-[#a8a8a8]">
                     Escolha o formato ideal para a plataforma desejada. O enquadramento, canvas e legendas serão adaptados automaticamente.
                   </p>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -1201,22 +1202,23 @@ export default function EditorPage({
                       <button
                         key={f.id}
                         onClick={() => updateStyleAndPersist((s) => ({ ...s, aspect_ratio: f.id as any }))}
-                        className={`rounded-2xl border p-4 text-left transition-all font-geist ${
+                        className={`rounded-2xl border p-4 text-left transition-all ${
                           (style.aspect_ratio || "9:16") === f.id
-                            ? "border-cyan-400 bg-cyan-400/10 shadow-lg shadow-cyan-500/10 scale-[1.02]"
-                            : "border-white/10 bg-black/40 text-slate-400 hover:text-white"
+                            ? "border-emerald-400 bg-emerald-500/10 shadow-lg shadow-emerald-500/10 scale-[1.02]"
+                            : "border-[#262626] bg-[#0a0a0a] text-[#a8a8a8] hover:text-white"
                         }`}
                       >
-                        <div className="text-xs font-bold text-white mb-1 font-jakarta">{f.label}</div>
-                        <div className="text-[10px] text-slate-400">{f.desc}</div>
+                        <div className="text-xs font-bold text-white mb-1">{f.label}</div>
+                        <div className="text-[10px] text-[#737373]">{f.desc}</div>
                       </button>
                     ))}
                   </div>
                 </div>
 
-                <div className="flex justify-end gap-3 pt-4 border-t border-white/10">
-                  <button onClick={() => setActiveTab("visual")} className="btn-primary btn-pill px-8 text-sm font-bold">
-                    Aprovar Estilo & Ir para Exportar →
+                <div className="flex justify-end gap-3 pt-4 border-t border-[#262626]">
+                  <button onClick={() => setActiveTab("visual")} className="shiny-cta px-8 py-3 text-xs font-bold">
+                    <span className="shiny-dots" aria-hidden="true" />
+                    <span className="shiny-cta-content text-white">Aprovar Estilo & Ir para Exportar →</span>
                   </button>
                 </div>
               </div>
@@ -1225,24 +1227,24 @@ export default function EditorPage({
             {/* 🎬 FASE 3 — VISUAL & EXPORTAR TAB */}
             {activeTab === "visual" && (
               <div className="space-y-6 animate-in">
-                <div className="rounded-2xl border border-white/10 bg-[#0E121E] p-6 space-y-5 shadow-2xl">
-                  <h3 className="text-lg font-black text-white font-jakarta">🎬 Exportação Final</h3>
-                  <p className="text-xs text-slate-400 font-geist">
-                    Revise todas as configurações e gere seu vídeo final em resolução vertical 1080x1920 30FPS.
+                <div className="rounded-2xl border border-[#262626] bg-[#171717] p-6 space-y-5 shadow-2xl">
+                  <h3 className="text-lg font-bold text-white">🎬 Exportação Final</h3>
+                  <p className="text-xs text-[#a8a8a8]">
+                    Revise todas as configurações e gere seu vídeo final de alta conversão.
                   </p>
 
-                  <div className="space-y-2 rounded-xl bg-black/40 p-4 border border-white/5 text-xs text-slate-300 font-geist">
+                  <div className="space-y-2 rounded-xl bg-[#0a0a0a] p-4 border border-[#262626] text-xs text-[#a8a8a8]">
                     <div className="flex justify-between">
                       <span>Layout:</span>
-                      <span className="font-bold text-cyan-400">{style.layout === "fullscreen" ? "Tela Cheia 1080x1920" : "Split 50/50"}</span>
+                      <span className="font-bold text-emerald-400">{style.layout === "fullscreen" ? "Tela Cheia 1080x1920" : "Split 50/50"}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Tema Legenda:</span>
-                      <span className="font-bold text-cyan-400 uppercase">{style.subtitle_theme}</span>
+                      <span className="font-bold text-emerald-400 uppercase">{style.subtitle_theme}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Formato Linhas:</span>
-                      <span className="font-bold text-cyan-400">{style.subtitle_max_lines === 1 ? "1 Linha Exata" : "Máximo 2 Linhas"}</span>
+                      <span className="font-bold text-emerald-400">{style.subtitle_max_lines === 1 ? "1 Linha Exata" : "Máximo 2 Linhas"}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Animação Karaoke:</span>

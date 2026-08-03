@@ -21,7 +21,6 @@ export default function HomePage() {
       setUploadProgress(10);
 
       try {
-        // Simulated progress steps
         const progressTimer = setInterval(() => {
           setUploadProgress((prev) => Math.min(prev + 5, 85));
         }, 300);
@@ -31,7 +30,6 @@ export default function HomePage() {
         clearInterval(progressTimer);
         setUploadProgress(100);
 
-        // Navigate to editor
         setTimeout(() => {
           router.push(`/editor/${result.job_id}`);
         }, 500);
@@ -68,34 +66,38 @@ export default function HomePage() {
     <main>
       {/* Hero Section */}
       <section className="relative overflow-hidden px-5 pb-20 pt-16 sm:px-8 sm:pb-28 sm:pt-24 lg:px-10 lg:pb-24 lg:pt-20">
-        {/* Glow */}
-        <div className="pointer-events-none absolute left-1/2 top-24 h-72 w-72 -translate-x-1/2 rounded-full bg-cyan-200/10 blur-3xl" />
+        {/* Conversão Extrema Emerald Radial Glow */}
+        <div className="pointer-events-none absolute left-1/2 top-24 h-96 w-96 -translate-x-1/2 rounded-full bg-emerald-500/15 blur-3xl" />
 
         <div className="relative z-10 mx-auto max-w-[1280px]">
-          {/* Badge */}
+          {/* Eyebrow Badge */}
           <div className="animate-in mb-8 flex justify-center">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.04] px-3.5 py-1.5 text-xs text-slate-300 shadow-2xl backdrop-blur-xl font-geist">
-              <span className="h-2 w-2 animate-pulse rounded-full bg-cyan-300 shadow-lg shadow-cyan-300/50" />
-              Edição automática com IA — Upload e pronto
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#262626] bg-[#171717] px-4 py-1.5 text-xs text-[#a8a8a8] shadow-2xl backdrop-blur-xl">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400 shadow-lg shadow-emerald-400/50" />
+              Edição Automática com Inteligência de Alta Conversão
             </div>
           </div>
 
-          {/* Heading */}
+          {/* Headline */}
           <div className="animate-in text-center">
-            <h1 className="mx-auto max-w-4xl text-4xl font-semibold leading-[1.1] tracking-tighter text-white sm:text-5xl lg:text-7xl font-jakarta">
-              Edição de vídeo sem a dor de cabeça.
+            <h1 className="mx-auto max-w-4xl text-4xl font-semibold leading-[1.1] tracking-tighter text-[#fafafa] sm:text-5xl lg:text-7xl font-sans">
+              Edição de vídeo com{" "}
+              <span className="hover-text-shine cursor-default">alta conversão automática</span>.
             </h1>
-            <p className="mx-auto mt-6 max-w-2xl text-base leading-7 text-slate-400 sm:text-lg font-geist">
-              O Editu transcreve, remove silêncios, aplica color grade e gera
-              legendas automaticamente. Faça upload do seu vídeo cru e receba o
-              resultado editado em minutos.
+            <p className="mx-auto mt-6 max-w-2xl text-base leading-7 text-[#a8a8a8] sm:text-lg">
+              O Editu transcreve, remove silêncios, aplica color grade, zoom dinâmico e gera
+              legendas perfeitamente sincronizadas. Envie seu vídeo cru e receba o resultado final pronto em minutos.
             </p>
           </div>
 
           {/* Upload Zone */}
           <div className="animate-slide-up mx-auto mt-12 max-w-2xl" id="upload">
             <div
-              className={`upload-zone ${isDragOver ? "dragover" : ""}`}
+              className={`relative cursor-pointer overflow-hidden rounded-2xl border-2 border-dashed p-10 text-center transition-all ${
+                isDragOver
+                  ? "border-emerald-400 bg-emerald-500/10 scale-[1.01]"
+                  : "border-[#262626] bg-[#171717]/80 hover:border-emerald-500/50 hover:bg-[#171717]"
+              }`}
               onDragOver={(e) => {
                 e.preventDefault();
                 setIsDragOver(true);
@@ -114,9 +116,9 @@ export default function HomePage() {
 
               {isUploading ? (
                 <div className="space-y-4">
-                  <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-cyan-400/10">
+                  <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/10">
                     <svg
-                      className="h-8 w-8 animate-spin text-cyan-300"
+                      className="h-8 w-8 animate-spin text-emerald-400"
                       viewBox="0 0 24 24"
                       fill="none"
                     >
@@ -135,159 +137,71 @@ export default function HomePage() {
                       />
                     </svg>
                   </div>
-                  <p className="text-sm text-slate-300 font-geist">
-                    Enviando{" "}
-                    <span className="font-medium text-cyan-200">{fileName}</span>
-                    ...
+                  <p className="text-sm text-[#fafafa]">
+                    Enviando <span className="font-medium text-emerald-400">{fileName}</span>...
                   </p>
-                  <div className="progress-track mx-auto max-w-xs">
+                  <div className="h-2 w-full max-w-xs mx-auto overflow-hidden rounded-full bg-black/40 border border-[#262626]">
                     <div
-                      className="progress-fill"
+                      className="h-full bg-brand-gradient transition-all duration-300"
                       style={{ width: `${uploadProgress}%` }}
                     />
                   </div>
                 </div>
               ) : (
-                <>
-                  <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white/[0.04] border border-white/[0.08]">
-                    <svg
-                      className="h-7 w-7 text-slate-400"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={1.5}
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"
-                      />
-                    </svg>
+                <div className="space-y-4">
+                  <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-[#262626] bg-[#0a0a0a] text-2xl shadow-xl">
+                    🎬
                   </div>
-                  <p className="text-sm text-slate-300 font-geist">
-                    <span className="font-semibold text-cyan-200">
-                      Clique para selecionar
-                    </span>{" "}
-                    ou arraste seu vídeo aqui
-                  </p>
-                  <p className="mt-2 text-xs text-slate-500 font-geist">
-                    MP4, MOV, WebM, MKV — até 500MB
-                  </p>
-                </>
+                  <div>
+                    <p className="text-lg font-semibold text-[#fafafa]">
+                      Arraste seu vídeo aqui ou <span className="text-emerald-400 underline">clique para selecionar</span>
+                    </p>
+                    <p className="mt-1 text-xs text-[#737373]">
+                      Suporta MP4, MOV, WEBM (até 500MB)
+                    </p>
+                  </div>
+
+                  <div className="pt-2">
+                    <button className="shiny-cta px-6 py-3 text-sm font-semibold inline-flex">
+                      <span className="shiny-dots" aria-hidden="true" />
+                      <span className="shiny-cta-content text-white">Selecionar Vídeo para Editar →</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {error && (
+                <p className="mt-4 text-xs font-semibold text-rose-400">
+                  ⚠️ {error}
+                </p>
               )}
             </div>
+          </div>
+        </div>
+      </section>
 
-            {error && (
-              <div className="mt-4 rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300 font-geist">
-                ⚠️ {error}
-              </div>
-            )}
+      {/* Features Showcase */}
+      <section className="border-t border-[#262626] bg-[#0a0a0a] py-20 px-5 sm:px-8 lg:px-10" id="features">
+        <div className="mx-auto max-w-[1200px] space-y-12">
+          <div className="text-center space-y-3">
+            <span className="text-xs uppercase tracking-[0.14em] text-emerald-400 font-semibold">RECURSOS PREMIUM</span>
+            <h2 className="text-3xl font-bold tracking-tight text-[#fafafa] sm:text-4xl">Tudo o que seu vídeo precisa para viralizar</h2>
           </div>
 
-          {/* Features Grid */}
-          <div
-            className="mx-auto mt-20 grid max-w-[1100px] gap-5 sm:grid-cols-2 lg:grid-cols-3"
-            id="features"
-          >
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {[
-              {
-                icon: "🎤",
-                title: "Transcrição com IA",
-                desc: "Transcrição automática com timestamps por palavra usando faster-whisper.",
-              },
-              {
-                icon: "✂️",
-                title: "Corte Inteligente",
-                desc: "Remove silêncios, pausas e hesitações sem cortar no meio de palavras.",
-              },
-              {
-                icon: "🎨",
-                title: "Color Grade Automático",
-                desc: "Preset cinematográfico profissional aplicado via FFmpeg automaticamente.",
-              },
-              {
-                icon: "📝",
-                title: "Legendas",
-                desc: "Legendas básicas ou animadas palavra por palavra, geradas da transcrição.",
-              },
-              {
-                icon: "🔍",
-                title: "Zoom Dinâmico",
-                desc: "Zoom in/out automático em pontos-chave para dar dinamismo ao vídeo.",
-              },
-              {
-                icon: "🎵",
-                title: "Trilha Sonora IA",
-                desc: "Geração de trilha sonora com IA integrada. Em breve.",
-                badge: "Em breve",
-              },
-            ].map((feature, i) => (
-              <div
-                key={i}
-                className="glass-card p-6 transition-all duration-300"
-                style={{
-                  animationDelay: `${0.1 + i * 0.08}s`,
-                }}
-              >
-                <div className="mb-4 text-2xl">{feature.icon}</div>
-                <h3 className="text-base font-semibold text-white font-jakarta">
-                  {feature.title}
-                </h3>
-                <p className="mt-2 text-sm text-slate-400 font-geist">
-                  {feature.desc}
-                </p>
-                {feature.badge && (
-                  <span className="mt-3 inline-block rounded-full border border-cyan-300/20 bg-cyan-400/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-cyan-200">
-                    {feature.badge}
-                  </span>
-                )}
+              { icon: "✂️", title: "Corte Inteligente de Silêncio", desc: "Identifica e remove pausas mortas automaticamente preservando o ritmo natural do apresentador." },
+              { icon: "🌟", title: "Legendas Dinâmicas Karaoke", desc: "Animação palavra por palavra sincronizada com a voz com quebra estrita de 1 ou 2 linhas." },
+              { icon: "📐", title: "Adaptação de Formatos", desc: "Exporte instantaneamente para 9:16 (Reels/TikTok), 4:5 (Feed), 1:1 ou 16:9 (YouTube)." },
+            ].map((item, idx) => (
+              <div key={idx} className="premium-card p-6 space-y-3">
+                <div className="h-11 w-11 rounded-full bg-emerald-500/10 flex items-center justify-center text-xl text-emerald-400">
+                  {item.icon}
+                </div>
+                <h3 className="text-lg font-bold text-[#fafafa]">{item.title}</h3>
+                <p className="text-sm text-[#a8a8a8] leading-relaxed">{item.desc}</p>
               </div>
             ))}
-          </div>
-
-          {/* How it Works */}
-          <div className="mx-auto mt-24 max-w-[1100px] text-center" id="how">
-            <span className="text-xs font-semibold tracking-wider text-cyan-300 uppercase bg-cyan-400/10 border border-cyan-400/20 px-3 py-1 rounded-full">
-              Como funciona
-            </span>
-            <h2 className="mt-4 text-3xl font-semibold tracking-tight text-white sm:text-4xl font-jakarta">
-              Do vídeo cru ao conteúdo profissional
-            </h2>
-
-            <div className="mt-12 grid gap-6 sm:grid-cols-3">
-              {[
-                {
-                  step: "1",
-                  title: "Faça upload",
-                  desc: "Envie seu vídeo cru — depoimento, apresentação, conteúdo para redes.",
-                },
-                {
-                  step: "2",
-                  title: "Limpeza automática",
-                  desc: "A IA transcreve, corta silêncios e aplica color grade. Tudo automático.",
-                },
-                {
-                  step: "3",
-                  title: "Escolha o estilo",
-                  desc: "Adicione legendas, zoom e trilha. Renderize e baixe o resultado final.",
-                },
-              ].map((item, i) => (
-                <div
-                  key={i}
-                  className="glass-card p-6 text-left"
-                >
-                  <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-2xl border border-cyan-300/30 bg-cyan-400/10 font-bold text-cyan-300">
-                    {item.step}
-                  </div>
-                  <h3 className="text-lg font-semibold text-white font-jakarta">
-                    {item.title}
-                  </h3>
-                  <p className="mt-2 text-sm text-slate-400 font-geist">
-                    {item.desc}
-                  </p>
-                </div>
-              ))}
-            </div>
           </div>
         </div>
       </section>
