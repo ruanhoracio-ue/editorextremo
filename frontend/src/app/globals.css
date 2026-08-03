@@ -163,12 +163,17 @@
     -moz-osx-font-smoothing: grayscale;
     background-color: #0a0a0a;
     color: #fafafa;
+    cursor: url("data:image/svg+xml,%3Csvg width='24' height='24' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M3 3L10.07 19.97L12.58 12.58L19.97 10.07L3 3Z' fill='%2310b981' stroke='%23ffffff' stroke-width='1.5'/%3E%3C/svg%3E"), auto;
   }
 
   body {
     background-color: #0a0a0a;
     color: #fafafa;
     font-family: var(--font-sans);
+  }
+
+  a, button, [role="button"], input[type="range"], input[type="file"], select {
+    cursor: url("data:image/svg+xml,%3Csvg width='24' height='24' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M3 3L10.07 19.97L12.58 12.58L19.97 10.07L3 3Z' fill='%2334d399' stroke='%23ffffff' stroke-width='1.5'/%3E%3C/svg%3E"), pointer !important;
   }
 }
 

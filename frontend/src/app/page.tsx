@@ -82,10 +82,10 @@ export default function HomePage() {
           <div className="animate-in text-center">
             <h1 className="mx-auto max-w-4xl text-4xl font-semibold leading-[1.1] tracking-tighter text-[#fafafa] sm:text-5xl lg:text-7xl font-sans">
               Edição de vídeo com{" "}
-              <span className="hover-text-shine cursor-default">alta conversão automática</span>.
+              <span className="hover-text-shine cursor-default drop-shadow-[0_0_25px_rgba(16,185,129,0.85)] text-emerald-300 font-extrabold">alta conversão automática</span>.
             </h1>
             <p className="mx-auto mt-6 max-w-2xl text-base leading-7 text-[#a8a8a8] sm:text-lg">
-              O Editu transcreve, remove silêncios, aplica color grade, zoom dinâmico e gera
+              O <strong className="text-white font-semibold">Editor</strong> transcreve, remove silêncios, aplica color grade, zoom dinâmico e gera
               legendas perfeitamente sincronizadas. Envie seu vídeo cru e receba o resultado final pronto em minutos.
             </p>
           </div>

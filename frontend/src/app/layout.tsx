@@ -3,7 +3,7 @@ import "./globals.css";
 import InitialSplashScreen from "@/components/InitialSplashScreen";
 
 export const metadata: Metadata = {
-  title: "Editu — Edição Automática de Vídeo",
+  title: "Editor — Edição Automática de Vídeo",
   description:
     "Automatize a edição dos seus vídeos curtos. Upload, limpeza automática, color grade, legendas e zoom — tudo em uma plataforma.",
   icons: {
@@ -44,11 +44,9 @@ export default function RootLayout({
             <header className="sticky top-0 z-50 border-b border-[#262626] bg-[#0a0a0a]/80 backdrop-blur-md">
               <nav className="mx-auto flex h-16 w-full max-w-[1360px] items-center justify-between px-5 sm:px-8">
                 <a href="/" className="group flex items-center gap-3 transition hover:opacity-90">
-                  <img
-                    src="/logo.svg"
-                    alt="Editu"
-                    className="h-7 w-auto object-contain"
-                  />
+                  <span className="text-xl font-extrabold tracking-tighter text-white hover-text-shine">
+                    EDITOR
+                  </span>
                 </a>
 
                 <div className="hidden items-center gap-8 md:flex text-sm text-[#a8a8a8]">
@@ -74,7 +72,7 @@ export default function RootLayout({
 
             {/* Footer */}
             <footer className="border-t border-[#262626] p-8 text-center text-xs text-[#737373]">
-              © 2026 Editu. Edição automática de vídeo com alta conversão.
+              © 2026 Editor. Edição automática de vídeo com alta conversão.
             </footer>
           </div>
         </InitialSplashScreen>
