@@ -271,6 +271,72 @@ def _run_render_pipeline(job: Job):
             final_video=final_path,
             progress=100,
         )
+class BatchRenderPayload(BaseModel):
+    formats: List[str] = Field(default_factory=lambda: ["9:16", "4:5", "1:1", "16:9"])
+
+
+@router.post("/api/jobs/{job_id}/batch_render")
+async def trigger_batch_render(job_id: str, payload: Optional[BatchRenderPayload] = None):
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job não encontrado")
+
+    formats = payload.formats if (payload and payload.formats) else ["9:16", "4:5", "1:1"]
+
+    update_job(job_id, status=JobStatus.RENDERING, progress=10)
+    enqueue(job, _run_batch_render_pipeline, formats)
+    return {"message": f"Renderização em lote de {len(formats)} formatos iniciada!", "status": job.status, "formats": formats}
+
+
+def _run_batch_render_pipeline(job: Job, formats: List[str]):
+    try:
+        clean_path = str(get_path(job.id, "clean_video.mp4"))
+        batch_videos = {}
+        rendered_files = []
+
+        total_fmt = len(formats)
+        for i, fmt in enumerate(formats):
+            slug = fmt.replace(":", "_")
+            out_filename = f"final_{slug}.mp4"
+            out_path = str(get_path(job.id, out_filename))
+
+            current_style = job.style_options.copy() if job.style_options else StyleOptions()
+            current_style.aspect_ratio = fmt
+
+            render_final_video(
+                clean_video_path=clean_path,
+                output_path=out_path,
+                style_options=current_style,
+                transcript=job.transcript,
+                cuts=job.cuts,
+            )
+
+            v_url = get_url(job.id, out_filename)
+            batch_videos[fmt] = v_url
+            rendered_files.append((out_filename, out_path))
+
+            progress_pct = int(10 + ((i + 1) / total_fmt) * 80)
+            update_job(job.id, progress=progress_pct, batch_videos=batch_videos)
+
+        import zipfile
+        zip_filename = "export_batch.zip"
+        zip_path = str(get_path(job.id, zip_filename))
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+            for fname, fpath in rendered_files:
+                if os.path.exists(fpath):
+                    zipf.write(fpath, arcname=f"editu_video_{fname}")
+
+        batch_zip_url = get_url(job.id, zip_filename)
+        first_video = list(batch_videos.values())[0] if batch_videos else None
+
+        update_job(
+            job.id,
+            status=JobStatus.DONE,
+            final_video=first_video,
+            batch_videos=batch_videos,
+            batch_zip_url=batch_zip_url,
+            progress=100,
+        )
     except Exception as e:
         import traceback
         traceback.print_exc()

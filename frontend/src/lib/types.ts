@@ -113,6 +113,8 @@ export interface Job {
   created_at?: string;
   cuts?: CutSegment[];
   silences?: SilenceRange[];
+  batch_videos?: Record<string, string>;
+  batch_zip_url?: string;
 }
 
 export const DEFAULT_COLOR_GRADE: ColorGradeOptions = {

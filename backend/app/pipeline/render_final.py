@@ -241,7 +241,17 @@ def _generate_ass_subtitles(
 
     ass_path = Path(video_path).parent / "subtitles.ass"
 
-    font_name = style.subtitle_font.value if hasattr(style.subtitle_font, "value") else str(style.subtitle_font)
+    raw_font = style.subtitle_font.value if hasattr(style.subtitle_font, "value") else str(style.subtitle_font)
+    font_map = {
+        "TikTok Medium": "Arial",
+        "Helvetica": "Helvetica",
+        "Montserrat": "Arial",
+        "Lato": "Arial",
+        "The Bold Font": "Arial",
+        "Bebas Neue": "Arial",
+        "Inter": "Arial",
+    }
+    font_name = font_map.get(raw_font, "Arial")
     font_size = style.subtitle_font_size
 
     aspect = getattr(style, "aspect_ratio", "9:16") or "9:16"
@@ -263,10 +273,11 @@ def _generate_ass_subtitles(
 
     outline_color = _hex_to_ass_color(style.subtitle_outline_color)
 
-    if style.subtitle_bg_color in ("transparent", "none", ""):
-        back_color = "&HFF000000"
-    else:
+    shadow_hex = getattr(style, "subtitle_shadow_color", "#000000") or "#000000"
+    if style.subtitle_bg_color not in ("transparent", "none", ""):
         back_color = _hex_to_ass_color(style.subtitle_bg_color, "80")
+    else:
+        back_color = _hex_to_ass_color(shadow_hex, "00")
 
     border_style = 1
     outline_w = getattr(style, "subtitle_outline_width", 2) if style.subtitle_outline_enabled else 0

@@ -63,6 +63,19 @@ export async function startRender(jobId: string): Promise<void> {
   }
 }
 
+export async function startBatchRender(jobId: string, formats: string[]): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/jobs/${jobId}/batch_render`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ formats }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Erro ao iniciar renderização em lote");
+  }
+}
+
 export async function updateTranscript(
   jobId: string,
   transcript: TranscriptSegment[]

@@ -158,8 +158,9 @@ class Job(BaseModel):
     original_duration: Optional[float] = None
     clean_duration: Optional[float] = None
 
-    # Style
-    style_options: Optional[StyleOptions] = Field(default_factory=StyleOptions)
+    # Multi-format Batch Export
+    batch_videos: Optional[dict[str, str]] = None
+    batch_zip_url: Optional[str] = None
 
     # Metadata
     created_at: datetime = Field(default_factory=datetime.utcnow)

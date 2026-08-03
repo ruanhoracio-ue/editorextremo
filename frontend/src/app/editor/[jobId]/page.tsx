@@ -5,6 +5,7 @@ import { useJobStatus } from "@/hooks/useJobStatus";
 import {
   setStyleOptions,
   startRender,
+  startBatchRender,
   getVideoUrl,
   updateCuts,
   updateColorGrade,
@@ -1418,11 +1419,9 @@ export default function EditorPage({
                       setIsRendering(true);
                       setRenderError(null);
                       try {
-                        for (const fmt of selectedExportFormats) {
-                          await setStyleOptions(jobId, { ...style, aspect_ratio: fmt as any });
-                          await startRender(jobId);
-                        }
-                        setTimeout(() => refetch(), 1000);
+                        await setStyleOptions(jobId, style);
+                        await startBatchRender(jobId, selectedExportFormats);
+                        setTimeout(() => refetch(), 1500);
                       } catch (err) {
                         setRenderError(err instanceof Error ? err.message : "Erro ao exportar em lote.");
                       }
@@ -1441,13 +1440,47 @@ export default function EditorPage({
 
                   {renderError && <p className="text-xs text-rose-400">⚠️ {renderError}</p>}
 
-                  {job.final_video_url && (
+                  {/* Batch Download Cards */}
+                  {job.batch_videos && Object.keys(job.batch_videos).length > 0 && (
+                    <div className="space-y-3 pt-3 border-t border-[#262626]">
+                      <span className="block text-xs font-bold text-emerald-400 uppercase tracking-wider">
+                        ✅ Formatos Renderizados Prontos para Download:
+                      </span>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {Object.entries(job.batch_videos).map(([fmt, url]) => (
+                          <a
+                            key={fmt}
+                            href={getVideoUrl(url)}
+                            download={`editu_video_${fmt.replace(":", "_")}.mp4`}
+                            className="flex items-center justify-between rounded-xl bg-emerald-500/10 border border-emerald-500/30 px-4 py-3 text-xs font-bold text-emerald-300 hover:bg-emerald-500/20 transition"
+                          >
+                            <span>📱 Formato {fmt}</span>
+                            <span className="text-[10px] bg-emerald-400 text-black px-2 py-0.5 rounded font-extrabold">⬇️ Baixar MP4</span>
+                          </a>
+                        ))}
+                      </div>
+
+                      {job.batch_zip_url && (
+                        <a
+                          href={getVideoUrl(job.batch_zip_url)}
+                          download="editu_videos_lote.zip"
+                          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-gradient py-3.5 text-sm font-extrabold text-[#0a0a0a] shadow-xl hover:opacity-90 transition mt-2"
+                        >
+                          📦 Baixar Pacote Completo ZIP (.zip)
+                        </a>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Single Download Fallback */}
+                  {job.final_video_url && (!job.batch_videos || Object.keys(job.batch_videos).length === 0) && (
                     <a
                       href={getVideoUrl(job.final_video_url)}
-                      download
-                      className="flex w-full items-center justify-center gap-2 rounded-full bg-brand-gradient py-3.5 text-sm font-bold text-[#0a0a0a] shadow-xl transition hover:opacity-90"
+                      download="editu_video_final.mp4"
+                      className="flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-gradient py-3.5 text-sm font-extrabold text-[#0a0a0a] shadow-xl hover:opacity-90 transition"
                     >
-                      ⬇️ Baixar Vídeo Final (Alta Conversão)
+                      ⬇️ Baixar Vídeo Final MP4
                     </a>
                   )}
                 </div>
