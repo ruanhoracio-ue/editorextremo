@@ -114,7 +114,7 @@ export async function updateColorGrade(
 export async function uploadSplitImage(
   jobId: string,
   file: File
-): Promise<void> {
+): Promise<{ message: string; path: string }> {
   const formData = new FormData();
   formData.append("file", file);
 
@@ -127,12 +127,13 @@ export async function uploadSplitImage(
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || "Erro ao enviar mídia de referência");
   }
+  return res.json();
 }
 
 export async function uploadSplitImages(
   jobId: string,
   files: FileList | File[]
-): Promise<void> {
+): Promise<{ message: string; paths: string[] }> {
   const formData = new FormData();
   Array.from(files).forEach((f) => formData.append("files", f));
 
@@ -143,8 +144,9 @@ export async function uploadSplitImages(
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Erro ao enviar múltiplas mídias");
+    throw new Error(err.detail || "Erro ao enviar mídias de referência");
   }
+  return res.json();
 }
 
 export async function triggerAutoBroll(jobId: string): Promise<void> {

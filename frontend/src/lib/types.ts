@@ -89,6 +89,7 @@ export interface StyleOptions {
   split_screen_images?: string[];
   split_screen_framing_y?: number;
   auto_broll_enabled?: boolean;
+  aspect_ratio?: "9:16" | "4:5" | "1:1" | "16:9";
 }
 
 export interface Job {

@@ -99,12 +99,14 @@ class StyleOptions(BaseModel):
     subtitle_bg_color: str = "transparent"
     subtitle_outline_enabled: bool = False
     subtitle_shadow_enabled: bool = False
-    subtitle_letter_spacing: int = Field(default=0, ge=0, le=15)
+    subtitle_letter_spacing: int = Field(default=0, ge=-10, le=20)
     subtitle_font_size: int = Field(default=58, ge=24, le=120)
     subtitle_max_lines: int = Field(default=1, ge=1, le=2)
     subtitle_max_chars_per_line: int = Field(default=25, ge=10, le=50)
     subtitle_animated: bool = False
     subtitle_animation_style: str = Field(default="bounce_yellow")
+
+    aspect_ratio: str = Field(default="9:16")
 
     zoom_enabled: bool = True
     zoom_intensity: float = Field(default=1.15, ge=1.0, le=2.0)

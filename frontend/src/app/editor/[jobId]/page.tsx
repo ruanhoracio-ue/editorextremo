@@ -328,11 +328,26 @@ export default function EditorPage({
       if (!files || files.length === 0) return;
       try {
         if (files.length === 1) {
-          await uploadSplitImage(jobId, files[0]);
+          const res = await uploadSplitImage(jobId, files[0]);
+          if (res?.path) {
+            updateStyleAndPersist((s) => ({
+              ...s,
+              layout: "split_screen",
+              split_screen_image: res.path,
+              split_screen_images: [res.path],
+            }));
+          }
         } else {
-          await uploadSplitImages(jobId, files);
+          const res = await uploadSplitImages(jobId, files);
+          if (res?.paths && res.paths.length > 0) {
+            updateStyleAndPersist((s) => ({
+              ...s,
+              layout: "split_screen",
+              split_screen_image: res.paths[0],
+              split_screen_images: res.paths,
+            }));
+          }
         }
-        updateStyleAndPersist((s) => ({ ...s, layout: "split_screen" }));
         refetch();
       } catch (err) {
         console.error(err);
@@ -1039,7 +1054,7 @@ export default function EditorPage({
                       </div>
                       <input
                         type="range"
-                        min="0"
+                        min="-5"
                         max="12"
                         value={style.subtitle_letter_spacing || 0}
                         onChange={(e) => updateStyleAndPersist((s) => ({ ...s, subtitle_letter_spacing: parseInt(e.target.value) }))}
@@ -1172,6 +1187,35 @@ export default function EditorPage({
                   </div>
                 </div>
 
+                {/* 8. ADAPTAÇÃO DE FORMATO DE VÍDEO */}
+                <div className="rounded-2xl border border-white/10 bg-[#0E121E] p-6 space-y-4">
+                  <label className="text-xs font-black uppercase tracking-wider text-cyan-400 font-geist">📐 ADAPTAÇÃO DE FORMATO DE VÍDEO</label>
+                  <p className="text-xs text-slate-400 font-geist">
+                    Escolha o formato ideal para a plataforma desejada. O enquadramento, canvas e legendas serão adaptados automaticamente.
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {[
+                      { id: "9:16", label: "📱 9:16 (1080x1920)", desc: "Reels / TikTok / Shorts" },
+                      { id: "4:5", label: "📸 4:5 (1080x1350)", desc: "Feed Instagram Retrato" },
+                      { id: "1:1", label: "🔲 1:1 (1080x1080)", desc: "Feed Quadrado Post" },
+                      { id: "16:9", label: "📺 16:9 (1920x1080)", desc: "YouTube / Widescreen" },
+                    ].map((f) => (
+                      <button
+                        key={f.id}
+                        onClick={() => updateStyleAndPersist((s) => ({ ...s, aspect_ratio: f.id as any }))}
+                        className={`rounded-2xl border p-4 text-left transition-all font-geist ${
+                          (style.aspect_ratio || "9:16") === f.id
+                            ? "border-cyan-400 bg-cyan-400/10 shadow-lg shadow-cyan-500/10 scale-[1.02]"
+                            : "border-white/10 bg-black/40 text-slate-400 hover:text-white"
+                        }`}
+                      >
+                        <div className="text-xs font-bold text-white mb-1 font-jakarta">{f.label}</div>
+                        <div className="text-[10px] text-slate-400">{f.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="flex justify-end gap-3 pt-4 border-t border-white/10">
                   <button onClick={() => setActiveTab("visual")} className="btn-primary btn-pill px-8 text-sm font-bold">
                     Aprovar Estilo & Ir para Exportar →
@@ -1241,7 +1285,15 @@ export default function EditorPage({
               <div
                 ref={videoContainerRef}
                 onMouseMove={handleContainerMouseMove}
-                className="relative mx-auto aspect-[9/16] h-[450px] max-h-[calc(100vh-160px)] w-auto overflow-hidden rounded-[1.75rem] bg-black shadow-2xl select-none border border-white/10"
+                className={`relative mx-auto max-h-[calc(100vh-160px)] w-auto overflow-hidden rounded-[1.75rem] bg-black shadow-2xl select-none border border-white/10 transition-all ${
+                  (style.aspect_ratio || "9:16") === "4:5"
+                    ? "aspect-[4/5] h-[420px]"
+                    : (style.aspect_ratio || "9:16") === "1:1"
+                    ? "aspect-[1/1] h-[380px]"
+                    : (style.aspect_ratio || "9:16") === "16:9"
+                    ? "aspect-[16/9] w-[450px] max-w-full h-auto"
+                    : "aspect-[9/16] h-[450px]"
+                }`}
               >
                 {/* Headline Overlay Option */}
                 {headlineText && (
@@ -1296,7 +1348,7 @@ export default function EditorPage({
                           onPause={handlePause}
                           onTimeUpdate={handleTimeUpdate}
                           onError={handleVideoError}
-                          className="h-full w-full object-cover transition-transform duration-500 ease-out"
+                          className="h-full w-full object-cover transition-none"
                           style={{
                             filter: cssGradeFilter,
                             transform: `scale(${currentZoomScale})`,
@@ -1321,7 +1373,7 @@ export default function EditorPage({
                       onPause={handlePause}
                       onTimeUpdate={handleTimeUpdate}
                       onError={handleVideoError}
-                      className="h-full w-full object-cover transition-transform duration-500 ease-out"
+                      className="h-full w-full object-cover transition-none"
                       style={{
                         filter: cssGradeFilter,
                         transform: `scale(${currentZoomScale})`,

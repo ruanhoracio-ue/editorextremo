@@ -55,16 +55,29 @@ def format_caption_text(
     return "\\N".join(lines)
 
 
+def _get_canvas_dimensions(aspect_ratio: str) -> tuple[int, int]:
+    if aspect_ratio == "4:5":
+        return 1080, 1350
+    elif aspect_ratio == "1:1":
+        return 1080, 1080
+    elif aspect_ratio == "16:9":
+        return 1920, 1080
+    return 1080, 1920
+
+
 def render_final_video(
     clean_video_path: str,
     output_path: str,
     style_options: StyleOptions,
     transcript: Optional[List[TranscriptSegment]] = None,
 ) -> str:
-    """Render final video on normalized 1080x1920 vertical canvas with clean split screen, framing Y, and dynamic zoom."""
+    """Render final video on dynamic resolution canvas (9:16, 4:5, 1:1, 16:9) with clean split screen, framing Y, and dynamic zoom."""
     ffmpeg_exe = get_ffmpeg_binary()
     filters: list[str] = []
     input_args = ["-i", clean_video_path]
+
+    aspect = getattr(style_options, "aspect_ratio", "9:16") or "9:16"
+    canvas_w, canvas_h = _get_canvas_dimensions(aspect)
 
     # --- Split Screen Layout (Clean 50/50 vertical stack with framing Y) ---
     if style_options.layout == "split_screen" and style_options.split_screen_image:
@@ -77,20 +90,21 @@ def render_final_video(
                 input_args.extend(["-stream_loop", "-1", "-i", img_path])
 
             framing_y = getattr(style_options, "split_screen_framing_y", 50.0)
-            crop_y_expr = f"(in_h-960)*{framing_y/100.0:.2f}"
+            half_h = canvas_h // 2
+            crop_y_expr = f"(in_h-{half_h})*{framing_y/100.0:.2f}"
 
             filters.append(
-                f"[1:v]scale=1080:-1,crop=1080:960:0:'{crop_y_expr}',setsar=1[top];"
-                f"[0:v]scale=1080:960:force_original_aspect_ratio=increase,crop=1080:960,setsar=1[bot];"
+                f"[1:v]scale={canvas_w}:-1,crop={canvas_w}:{half_h}:0:'{crop_y_expr}',setsar=1[top];"
+                f"[0:v]scale={canvas_w}:{half_h}:force_original_aspect_ratio=increase,crop={canvas_w}:{half_h},setsar=1[bot];"
                 f"[top][bot]vstack=inputs=2[base_canvas]"
             )
         else:
             filters.append(
-                "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1[base_canvas]"
+                f"[0:v]scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=increase,crop={canvas_w}:{canvas_h},setsar=1[base_canvas]"
             )
     else:
         filters.append(
-            "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1[base_canvas]"
+            f"[0:v]scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=increase,crop={canvas_w}:{canvas_h},setsar=1[base_canvas]"
         )
 
     # --- Dynamic Zoom Filter ---
@@ -224,7 +238,8 @@ def _generate_ass_subtitles(
     font_name = style.subtitle_font.value if hasattr(style.subtitle_font, "value") else str(style.subtitle_font)
     font_size = style.subtitle_font_size
 
-    canvas_w, canvas_h = 1080, 1920
+    aspect = getattr(style, "aspect_ratio", "9:16") or "9:16"
+    canvas_w, canvas_h = _get_canvas_dimensions(aspect)
     pos_x = int((style.subtitle_x_percent / 100.0) * canvas_w)
     pos_y = int((style.subtitle_y_percent / 100.0) * canvas_h)
     spacing = style.subtitle_letter_spacing
