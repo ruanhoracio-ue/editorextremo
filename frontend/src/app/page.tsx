@@ -66,28 +66,32 @@ export default function HomePage() {
     <main>
       {/* Hero Section */}
       <section className="relative overflow-hidden px-5 pb-20 pt-16 sm:px-8 sm:pb-28 sm:pt-24 lg:px-10 lg:pb-24 lg:pt-20">
-        {/* Conversão Extrema Emerald Radial Glow */}
-        <div className="pointer-events-none absolute left-1/2 top-24 h-96 w-96 -translate-x-1/2 rounded-full bg-emerald-500/15 blur-3xl" />
+        {/* Conversão Extrema Emerald Ambient Radial Glow */}
+        <div className="pointer-events-none absolute left-1/2 top-1/3 h-[450px] w-[550px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-500/20 blur-[130px]" />
 
-        <div className="relative z-10 mx-auto max-w-[1280px]">
-          {/* Eyebrow Badge */}
+        <div className="relative z-10 mx-auto max-w-[1280px] text-center">
+          {/* Eyebrow Pill Badge (Conversão Extrema Style) */}
           <div className="animate-in mb-8 flex justify-center">
-            <div className="inline-flex items-center gap-2 rounded-full border border-[#262626] bg-[#171717] px-4 py-1.5 text-xs text-[#a8a8a8] shadow-2xl backdrop-blur-xl">
-              <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400 shadow-lg shadow-emerald-400/50" />
-              Edição Automática com Inteligência de Alta Conversão
+            <div className="inline-flex items-center gap-2.5 rounded-full border border-[#262626] bg-[#171717]/90 px-4 py-1.5 text-xs text-[#a8a8a8] shadow-2xl backdrop-blur-xl">
+              <div className="flex -space-x-1.5 overflow-hidden">
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-[9px] font-black text-black">✓</span>
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-400 text-[9px] font-black text-black">AI</span>
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-300 text-[9px] font-black text-black">★</span>
+              </div>
+              <span className="font-medium text-[#d4d4d4]">+1.500 vídeos editados com alta conversão</span>
             </div>
           </div>
 
-          {/* Headline Container with Shiny Dots (Quadrinholados Animados do Botão) */}
-          <div className="animate-in relative overflow-hidden rounded-3xl border border-[#262626] bg-[#171717]/60 p-8 sm:p-12 text-center backdrop-blur-xl shadow-2xl max-w-5xl mx-auto">
-            <div className="shiny-dots opacity-80" aria-hidden="true" />
-            <h1 className="relative z-10 text-4xl font-semibold leading-[1.15] tracking-tighter text-[#fafafa] sm:text-5xl lg:text-7xl font-sans">
+          {/* Pure Headline (NO Card Container Behind It) */}
+          <div className="animate-in text-center max-w-5xl mx-auto">
+            <h1 className="mx-auto max-w-4xl text-5xl font-bold leading-[1.08] tracking-tight text-white sm:text-6xl lg:text-7xl font-sans">
               Edição de vídeo com{" "}
-              <span className="hover-text-shine cursor-default font-extrabold">alta conversão automática</span>.
+              <span className="text-[#10b981] drop-shadow-[0_0_35px_rgba(16,185,129,0.75)] font-extrabold">
+                alta conversão automática
+              </span>
             </h1>
-            <p className="relative z-10 mx-auto mt-6 max-w-2xl text-base leading-7 text-[#a8a8a8] sm:text-lg">
-              O <strong className="text-white font-semibold">Editor</strong> transcreve, remove silêncios, aplica color grade, zoom dinâmico e gera
-              legendas perfeitamente sincronizadas. Envie seu vídeo cru e receba o resultado final pronto em minutos.
+            <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-[#a1a1a1] sm:text-lg font-normal">
+              Transcrição, limpeza de silêncios, color grade e <strong className="text-white font-semibold">legendas prontas para colar</strong>. Crie vídeos virais e <strong className="text-white font-semibold">economize horas com inteligência automática</strong>.
             </p>
           </div>
 
