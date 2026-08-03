@@ -16,8 +16,8 @@ async def render_video(job_id: str):
     if not job:
         raise HTTPException(404, "Job não encontrado")
 
-    if job.status not in ("clean_ready", "done"):
-        raise HTTPException(400, "O vídeo limpo ainda não está pronto.")
+    if job.status not in ("clean_ready", "done", "rendering"):
+        raise HTTPException(400, f"O vídeo não está pronto para renderizar (status: {job.status}).")
 
     if not job.style_options:
         # Use default style if none set

@@ -244,7 +244,7 @@ async def trigger_render(job_id: str):
     if not job:
         raise HTTPException(404, "Job não encontrado")
 
-    if job.status not in (JobStatus.CLEAN_READY, JobStatus.DONE, JobStatus.ERROR):
+    if job.status not in (JobStatus.CLEAN_READY, JobStatus.DONE, JobStatus.RENDERING, JobStatus.ERROR):
         raise HTTPException(400, f"Job não está pronto para renderização (status: {job.status})")
 
     enqueue(job, _run_render_pipeline)
