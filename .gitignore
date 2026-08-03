@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+backend/venv/
+venv/
+
+# Next.js & Build outputs
+.next/
+frontend/.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+
+# Storage & Cache
+storage/
+backend/storage/
+__pycache__/
+*.py[cod]
+
+# Environment & Secrets
+.env
+.env*.local
+.env.production
+.env.development
+
+# Operating System Files
+.DS_Store
+.DS_Store?
+._*

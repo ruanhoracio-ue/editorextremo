@@ -1,0 +1,328 @@
+"""Final render module — FFmpeg composition with subtitles, clean split screen, dynamic zoom."""
+
+from __future__ import annotations
+
+import os
+import subprocess
+import shutil
+from pathlib import Path
+from typing import List, Optional
+
+from app.models.schemas import StyleOptions, TranscriptSegment
+
+
+def get_ffmpeg_binary() -> str:
+    path = shutil.which("ffmpeg")
+    if path:
+        return path
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return "ffmpeg"
+
+
+def format_caption_text(
+    raw_text: str,
+    max_lines: int = 1,
+    max_chars_per_line: int = 25,
+    is_uppercase: bool = False,
+) -> str:
+    """Format caption text into strict 1 or 2 lines without ever overflowing into 3 lines."""
+    text = raw_text.upper() if is_uppercase else raw_text
+    words = text.split()
+    if not words:
+        return ""
+
+    lines: list[str] = []
+    current = ""
+    for w in words:
+        if len((current + " " + w).strip()) <= max_chars_per_line:
+            current = (current + " " + w).strip()
+        else:
+            if current:
+                lines.append(current)
+            current = w
+    if current:
+        lines.append(current)
+
+    if max_lines == 1:
+        return " ".join(lines)
+    elif max_lines == 2:
+        if len(lines) <= 2:
+            return "\\N".join(lines)
+        return lines[0] + "\\N" + " ".join(lines[1:])
+    return "\\N".join(lines)
+
+
+def render_final_video(
+    clean_video_path: str,
+    output_path: str,
+    style_options: StyleOptions,
+    transcript: Optional[List[TranscriptSegment]] = None,
+) -> str:
+    """Render final video on normalized 1080x1920 vertical canvas with clean split screen, framing Y, and dynamic zoom."""
+    ffmpeg_exe = get_ffmpeg_binary()
+    filters: list[str] = []
+    input_args = ["-i", clean_video_path]
+
+    # --- Split Screen Layout (Clean 50/50 vertical stack with framing Y) ---
+    if style_options.layout == "split_screen" and style_options.split_screen_image:
+        img_path = style_options.split_screen_image
+        if os.path.exists(img_path):
+            ext = os.path.splitext(img_path)[1].lower()
+            if ext in (".jpg", ".jpeg", ".png", ".webp", ".bmp"):
+                input_args.extend(["-loop", "1", "-i", img_path])
+            else:
+                input_args.extend(["-stream_loop", "-1", "-i", img_path])
+
+            framing_y = getattr(style_options, "split_screen_framing_y", 50.0)
+            crop_y_expr = f"(in_h-960)*{framing_y/100.0:.2f}"
+
+            filters.append(
+                f"[1:v]scale=1080:-1,crop=1080:960:0:'{crop_y_expr}',setsar=1[top];"
+                f"[0:v]scale=1080:960:force_original_aspect_ratio=increase,crop=1080:960,setsar=1[bot];"
+                f"[top][bot]vstack=inputs=2[base_canvas]"
+            )
+        else:
+            filters.append(
+                "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1[base_canvas]"
+            )
+    else:
+        filters.append(
+            "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1[base_canvas]"
+        )
+
+    # --- Dynamic Zoom Filter ---
+    current_label = "base_canvas"
+    if style_options.zoom_enabled and transcript:
+        zoom_filter = _build_varied_zoom_filter(transcript, style_options.zoom_intensity)
+        if zoom_filter:
+            filters.append(f"[{current_label}]{zoom_filter}[zoomed_canvas]")
+            current_label = "zoomed_canvas"
+
+    # --- Subtitles ASS ---
+    if style_options.subtitle_style == "basic" and transcript:
+        ass_path = _generate_ass_subtitles(clean_video_path, transcript, style_options)
+        if ass_path:
+            escaped = ass_path.replace(":", "\\:").replace("'", "\\'")
+            filters.append(f"[{current_label}]ass='{escaped}'[final]")
+        else:
+            filters.append(f"[{current_label}]null[final]")
+    else:
+        filters.append(f"[{current_label}]null[final]")
+
+    # --- Build Command ---
+    cmd = [ffmpeg_exe, "-y"]
+    cmd.extend(input_args)
+
+    filter_complex = ";".join(filters)
+    cmd.extend(["-filter_complex", filter_complex])
+    cmd.extend(["-map", "[final]", "-map", "0:a"])
+    cmd.extend([
+        "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+        "-c:a", "aac", "-b:a", "128k",
+        "-shortest",
+        output_path
+    ])
+
+    try:
+        print(f"🎬 Render command: {' '.join(cmd[:14])}...")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        if result.returncode != 0:
+            print(f"⚠️ Complex render failed: {result.stderr[-600:]}")
+            _simple_render(ffmpeg_exe, clean_video_path, output_path, style_options, transcript)
+    except Exception as e:
+        print(f"⚠️ Render exception: {e}. Running simple render fallback.")
+        _simple_render(ffmpeg_exe, clean_video_path, output_path, style_options, transcript)
+
+    return output_path
+
+
+def _build_varied_zoom_filter(
+    transcript: List[TranscriptSegment],
+    zoom_intensity: float = 1.15,
+) -> str:
+    """Build FFmpeg filter that holds zoom in for ~4 seconds (blocks of 3 captions), then normal for ~4 seconds."""
+    if not transcript:
+        return ""
+
+    conditions = []
+    for i, seg in enumerate(transcript):
+        block = i // 3
+        if block % 2 == 1:
+            conditions.append(f"between(time,{seg.start:.2f},{seg.end:.2f})")
+
+    if not conditions:
+        return ""
+
+    cond_expr = "+".join(conditions)
+    z_expr = f"if(gt({cond_expr},0), {zoom_intensity:.3f}, 1.0)"
+
+    return (
+        f"zoompan=z='{z_expr}'"
+        f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+        f":d=1:s=1080x1920:fps=30"
+    )
+
+
+def _simple_render(
+    ffmpeg_exe: str,
+    clean_video_path: str,
+    output_path: str,
+    style_options: StyleOptions,
+    transcript: Optional[List[TranscriptSegment]],
+) -> str:
+    """Fallback render."""
+    vf_parts = ["scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1"]
+
+    if style_options.subtitle_style == "basic" and transcript:
+        ass_path = _generate_ass_subtitles(clean_video_path, transcript, style_options)
+        if ass_path:
+            escaped = ass_path.replace(":", "\\:").replace("'", "\\'")
+            vf_parts.append(f"ass='{escaped}'")
+
+    cmd = [ffmpeg_exe, "-y", "-i", clean_video_path, "-vf", ",".join(vf_parts)]
+    cmd.extend([
+        "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+        "-c:a", "aac", "-b:a", "128k",
+        output_path
+    ])
+
+    try:
+        subprocess.run(cmd, capture_output=True, text=True, timeout=600, check=True)
+    except Exception:
+        subprocess.run(["cp", clean_video_path, output_path])
+
+    return output_path
+
+
+def _hex_to_ass_color(hex_color: str, alpha: str = "00") -> str:
+    """Convert #RRGGBB hex to ASS &HAABBGGRR."""
+    if not hex_color or hex_color in ("transparent", "none"):
+        return f"&H{alpha}000000"
+
+    hex_clean = hex_color.lstrip("#")
+    if len(hex_clean) != 6:
+        return f"&H{alpha}000000"
+
+    r, g, b = hex_clean[0:2], hex_clean[2:4], hex_clean[4:6]
+    return f"&H{alpha}{b}{g}{r}".upper()
+
+
+def _generate_ass_subtitles(
+    video_path: str,
+    transcript: List[TranscriptSegment],
+    style: StyleOptions,
+) -> Optional[str]:
+    """Generate ASS subtitles for 1080x1920 canvas with strict 1/2 line formatting and Karaoke animation styles."""
+    if not transcript:
+        return None
+
+    ass_path = Path(video_path).parent / "subtitles.ass"
+
+    font_name = style.subtitle_font.value if hasattr(style.subtitle_font, "value") else str(style.subtitle_font)
+    font_size = style.subtitle_font_size
+
+    canvas_w, canvas_h = 1080, 1920
+    pos_x = int((style.subtitle_x_percent / 100.0) * canvas_w)
+    pos_y = int((style.subtitle_y_percent / 100.0) * canvas_h)
+    spacing = style.subtitle_letter_spacing
+
+    primary_color = _hex_to_ass_color(style.subtitle_color)
+
+    # Karaoke animation secondary highlight color (ASS BGR)
+    anim_style = getattr(style, "subtitle_animation_style", "bounce_yellow")
+    if anim_style == "neon_cyan":
+        secondary_color = "&H00EEEE22"  # Neon Cyan
+    elif anim_style == "box_primary":
+        secondary_color = "&H0000FF00"  # Neon Green
+    else:
+        secondary_color = "&H0015CAFA"  # Bright Yellow
+
+    outline_color = _hex_to_ass_color(style.subtitle_outline_color)
+
+    if style.subtitle_bg_color in ("transparent", "none", ""):
+        back_color = "&HFF000000"
+    else:
+        back_color = _hex_to_ass_color(style.subtitle_bg_color, "80")
+
+    border_style = 1
+    outline_w = 3 if style.subtitle_outline_enabled else 0
+    shadow_d = 1 if style.subtitle_shadow_enabled else 0
+
+    theme = style.subtitle_theme.value if hasattr(style.subtitle_theme, "value") else str(style.subtitle_theme)
+
+    if theme == "andromeda":
+        border_style = 3
+        back_color = "&H00000000"
+        primary_color = "&H00FFFFFF"
+        outline_w = 0
+        shadow_d = 0
+    elif theme == "energy":
+        border_style = 3
+        back_color = "&H00FFFFFF"
+        primary_color = "&H00000000"
+        outline_w = 0
+        shadow_d = 0
+    elif theme == "million":
+        primary_color = "&H00FFFFFF"
+        shadow_d = 2
+        outline_w = 0
+    elif theme == "minimal_white":
+        primary_color = "&H00FFFFFF"
+        outline_w = 0
+        shadow_d = 0
+
+    header = f"""[Script Info]
+Title: Editu Subtitles
+ScriptType: v4.00+
+PlayResX: {canvas_w}
+PlayResY: {canvas_h}
+WrapStyle: 0
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,{font_name},{font_size},{primary_color},{secondary_color},{outline_color},{back_color},-1,0,0,0,100,100,{spacing},0,{border_style},{outline_w},{shadow_d},5,40,40,60,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+
+    events = []
+    is_animated = getattr(style, "subtitle_animated", False)
+    max_lines = getattr(style, "subtitle_max_lines", 1)
+    max_chars = getattr(style, "subtitle_max_chars_per_line", 25)
+    is_upper = theme in ("andromeda", "million")
+
+    for seg in transcript:
+        start = _seconds_to_ass_time(seg.start)
+        end = _seconds_to_ass_time(seg.end)
+
+        if is_animated and seg.words:
+            # Word-by-word karaoke. Use \kt to jump the karaoke timer to each
+            # word's real offset (relative to the dialogue start) so pauses
+            # between words never shift the fill out of sync.
+            karaoke_parts = []
+            seg_start_ts = seg.start
+            for w in seg.words:
+                dur_cs = int(max(0.1, w.end - w.start) * 100)
+                offset_cs = max(0, int((w.start - seg_start_ts) * 100))
+                word_txt = w.word.upper() if is_upper else w.word
+                karaoke_parts.append(f"{{\\kt{offset_cs}}}{{\\kf{dur_cs}}}{word_txt}")
+            text = " ".join(karaoke_parts)
+        else:
+            text = format_caption_text(seg.text, max_lines, max_chars, is_upper)
+
+        events.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{{\\pos({pos_x},{pos_y})}}{text}")
+
+    ass_path.write_text(header + "\n".join(events), encoding="utf-8")
+    return str(ass_path)
+
+
+def _seconds_to_ass_time(seconds: float) -> str:
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = int(seconds % 60)
+    cs = int((seconds % 1) * 100)
+    return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
