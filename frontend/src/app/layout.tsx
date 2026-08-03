@@ -44,9 +44,11 @@ export default function RootLayout({
             <header className="sticky top-0 z-50 border-b border-[#262626] bg-[#0a0a0a]/80 backdrop-blur-md">
               <nav className="mx-auto flex h-16 w-full max-w-[1360px] items-center justify-between px-5 sm:px-8">
                 <a href="/" className="group flex items-center gap-3 transition hover:opacity-90">
-                  <span className="text-xl font-extrabold tracking-tighter text-white hover-text-shine">
-                    EDITOR
-                  </span>
+                  <img
+                    src="/logo.svg"
+                    alt="Editor"
+                    className="h-6 sm:h-7 w-auto object-contain"
+                  />
                 </a>
 
                 <div className="hidden items-center gap-8 md:flex text-sm text-[#a8a8a8]">
