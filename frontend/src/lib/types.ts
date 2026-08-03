@@ -16,7 +16,7 @@ export type SubtitleStyle = "none" | "basic";
 
 export type SubtitlePosition = "bottom" | "middle" | "top" | "custom";
 
-export type SubtitleFont = "Inter" | "Montserrat" | "Bebas Neue" | "Impact" | "The Bold Font" | "Poppins" | "Luckiest Guy";
+export type SubtitleFont = "TikTok Medium" | "Helvetica" | "Montserrat" | "Lato" | "Inter" | "The Bold Font" | "Bebas Neue";
 
 export type SubtitleTheme =
   | "andromeda"
@@ -71,9 +71,12 @@ export interface StyleOptions {
   subtitle_y_percent: number;
   subtitle_color: string;
   subtitle_outline_color: string;
+  subtitle_outline_width?: number;
   subtitle_bg_color: string;
   subtitle_outline_enabled: boolean;
   subtitle_shadow_enabled: boolean;
+  subtitle_shadow_offset?: number;
+  subtitle_shadow_color?: string;
   subtitle_letter_spacing: number;
   subtitle_font_size: number;
   subtitle_max_lines: number;

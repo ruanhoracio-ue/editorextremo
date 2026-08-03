@@ -43,7 +43,7 @@ export default function EditorPage({
   const [isPlaying, setIsPlaying] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(100);
   const [highlightColor, setHighlightColor] = useState("#10b981");
-  const [headlineText, setHeadlineText] = useState("");
+  const [selectedExportFormats, setSelectedExportFormats] = useState<string[]>(["9:16", "4:5", "1:1"]);
 
   const [isDraggingSub, setIsDraggingSub] = useState(false);
   const [copiedTx, setCopiedTx] = useState(false);
@@ -453,7 +453,9 @@ export default function EditorPage({
     const animStyle = style.subtitle_animation_style || "bounce_yellow";
 
     const activeColorClass =
-      animStyle === "neon_cyan"
+      animStyle === "pop_flash"
+        ? "text-[#10b981] scale-125 animate-pulse drop-shadow-[0_0_15px_rgba(16,185,129,1)] font-extrabold"
+        : animStyle === "neon_cyan"
         ? "text-emerald-300 drop-shadow-[0_2px_10px_rgba(16,185,129,0.9)] scale-110 font-bold"
         : animStyle === "box_primary"
         ? "text-emerald-300 drop-shadow-[0_2px_10px_rgba(52,211,153,0.9)] scale-110 font-black"
@@ -871,22 +873,7 @@ export default function EditorPage({
                   </div>
                 </div>
 
-                {/* 3. ESTILO DE HEADLINE */}
-                <div className="space-y-3">
-                  <label className="text-xs font-bold uppercase tracking-wider text-emerald-400">ESTILO DE HEADLINE (TÍTULO DE TOPO)</label>
-                  <div className="rounded-2xl border border-[#262626] bg-[#171717] p-5 space-y-4">
-                    <input
-                      type="text"
-                      placeholder="Digite a sua headline de topo aqui..."
-                      value={headlineText}
-                      onChange={(e) => setHeadlineText(e.target.value)}
-                      className="w-full rounded-xl border border-[#262626] bg-[#0a0a0a] px-4 py-3 text-sm text-[#fafafa] focus:border-emerald-400 focus:outline-none"
-                    />
-                    <div className="p-3 text-center text-sm font-bold text-white uppercase tracking-wider drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)]">
-                      {headlineText || "É ASSIM QUE VAI FICAR A SUA HEADLINE"}
-                    </div>
-                  </div>
-                </div>
+
 
                 {/* 4. ESTILO DE LEGENDA */}
                 <div className="space-y-3">
@@ -964,35 +951,144 @@ export default function EditorPage({
                   </div>
                 </div>
 
-                {/* 6. CONTROLES RIGOROSOS DE TEXTO */}
-                <div className="rounded-2xl border border-[#262626] bg-[#171717] p-6 space-y-4">
-                  <label className="text-xs font-bold uppercase tracking-wider text-emerald-400">CONTROLES RIGOROSOS DE TEXTO</label>
+                {/* 6. CONTROLES RIGOROSOS DE TEXTO E ANIMAÇÃO */}
+                <div className="rounded-2xl border border-[#262626] bg-[#171717] p-6 space-y-5">
+                  <label className="text-xs font-bold uppercase tracking-wider text-emerald-400">CONTROLES DE LEGENDA & TIPOGRAFIA LIMPA</label>
                   
-                  {/* Fonte Tipográfica */}
+                  {/* Fonte Tipográfica Limpa */}
                   <div>
-                    <span className="block text-xs font-medium text-[#a8a8a8] mb-1.5">Fonte da Legenda:</span>
+                    <span className="block text-xs font-medium text-[#a8a8a8] mb-1.5">Fonte da Legenda (Modelos Limpos):</span>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       {[
-                        { name: "The Bold Font", label: "The Bold Font (Anton)" },
-                        { name: "Montserrat", label: "Montserrat" },
-                        { name: "Bebas Neue", label: "Bebas Neue" },
-                        { name: "Impact", label: "Impact" },
-                        { name: "Poppins", label: "Poppins" },
-                        { name: "Luckiest Guy", label: "Luckiest Guy" },
-                        { name: "Inter", label: "Inter" },
+                        { name: "TikTok Medium", label: "🎵 TikTok Medium" },
+                        { name: "Helvetica", label: "🏢 Helvetica" },
+                        { name: "Montserrat", label: "✨ Montserrat" },
+                        { name: "Lato", label: "🍃 Lato" },
                       ].map((f) => (
                         <button
                           key={f.name}
                           onClick={() => updateStyleAndPersist((s) => ({ ...s, subtitle_font: f.name as any }))}
-                          className={`rounded-xl border py-2 px-3 text-xs font-bold transition ${
+                          className={`rounded-xl border py-2.5 px-3 text-xs font-bold transition ${
                             style.subtitle_font === f.name
-                              ? "border-emerald-400 bg-emerald-500/20 text-emerald-300"
+                              ? "border-emerald-400 bg-emerald-500/20 text-emerald-300 shadow-md shadow-emerald-500/10"
                               : "border-[#262626] bg-[#0a0a0a] text-[#a8a8a8] hover:text-white"
                           }`}
                         >
                           {f.label}
                         </button>
                       ))}
+                    </div>
+                  </div>
+
+                  {/* Animações de Legenda */}
+                  <div>
+                    <span className="block text-xs font-medium text-[#a8a8a8] mb-1.5">Efeito de Animação ao Falar:</span>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {[
+                        { id: "pop_flash", label: "⚡ Pop / Pisca (Troca)" },
+                        { id: "bounce_yellow", label: "🟡 Destaque Amarelo" },
+                        { id: "neon_cyan", label: "🟢 Neon Esmeralda" },
+                        { id: "box_primary", label: "🔲 Caixa de Texto" },
+                      ].map((anim) => (
+                        <button
+                          key={anim.id}
+                          onClick={() => updateStyleAndPersist((s) => ({ ...s, subtitle_animated: true, subtitle_animation_style: anim.id }))}
+                          className={`rounded-xl border py-2 px-3 text-xs font-bold transition ${
+                            style.subtitle_animated && (style.subtitle_animation_style || "bounce_yellow") === anim.id
+                              ? "border-emerald-400 bg-emerald-500/20 text-emerald-300"
+                              : "border-[#262626] bg-[#0a0a0a] text-[#a8a8a8] hover:text-white"
+                          }`}
+                        >
+                          {anim.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Controles de Traçado (Stroke) e Sombra Projetada */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-[#262626]">
+                    {/* Painel de Traçado (Outline) */}
+                    <div className="space-y-3 rounded-xl bg-[#0a0a0a] p-4 border border-[#262626]">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-white">✍️ Traçado (Contorno das Letras)</span>
+                        <button
+                          onClick={() => updateStyleAndPersist((s) => ({ ...s, subtitle_outline_enabled: !s.subtitle_outline_enabled }))}
+                          className={`rounded-full px-3 py-1 text-[10px] font-extrabold transition ${
+                            style.subtitle_outline_enabled ? "bg-emerald-500 text-black" : "bg-white/10 text-[#a8a8a8]"
+                          }`}
+                        >
+                          {style.subtitle_outline_enabled ? "ATIVADO" : "DESATIVADO"}
+                        </button>
+                      </div>
+
+                      {style.subtitle_outline_enabled && (
+                        <div className="space-y-3 pt-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] text-[#a8a8a8]">Espessura do Traçado:</span>
+                            <span className="font-mono text-xs font-bold text-emerald-400">{style.subtitle_outline_width || 2}px</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="1"
+                            max="8"
+                            value={style.subtitle_outline_width || 2}
+                            onChange={(e) => updateStyleAndPersist((s) => ({ ...s, subtitle_outline_width: parseInt(e.target.value) }))}
+                            className="w-full accent-emerald-400 cursor-pointer"
+                          />
+
+                          <div className="flex items-center justify-between pt-1">
+                            <span className="text-[11px] text-[#a8a8a8]">Cor do Traçado:</span>
+                            <input
+                              type="color"
+                              value={style.subtitle_outline_color || "#000000"}
+                              onChange={(e) => updateStyleAndPersist((s) => ({ ...s, subtitle_outline_color: e.target.value }))}
+                              className="h-7 w-12 cursor-pointer rounded border border-[#262626] bg-transparent p-0"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Painel de Sombra Projetada (Drop Shadow) */}
+                    <div className="space-y-3 rounded-xl bg-[#0a0a0a] p-4 border border-[#262626]">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-white">🌓 Sombra Projetada (Drop Shadow)</span>
+                        <button
+                          onClick={() => updateStyleAndPersist((s) => ({ ...s, subtitle_shadow_enabled: !s.subtitle_shadow_enabled }))}
+                          className={`rounded-full px-3 py-1 text-[10px] font-extrabold transition ${
+                            style.subtitle_shadow_enabled ? "bg-emerald-500 text-black" : "bg-white/10 text-[#a8a8a8]"
+                          }`}
+                        >
+                          {style.subtitle_shadow_enabled ? "ATIVADO" : "DESATIVADO"}
+                        </button>
+                      </div>
+
+                      {style.subtitle_shadow_enabled && (
+                        <div className="space-y-3 pt-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] text-[#a8a8a8]">Intensidade/Deslocamento:</span>
+                            <span className="font-mono text-xs font-bold text-emerald-400">{style.subtitle_shadow_offset || 4}px</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="1"
+                            max="12"
+                            value={style.subtitle_shadow_offset || 4}
+                            onChange={(e) => updateStyleAndPersist((s) => ({ ...s, subtitle_shadow_offset: parseInt(e.target.value) }))}
+                            className="w-full accent-emerald-400 cursor-pointer"
+                          />
+
+                          <div className="flex items-center justify-between pt-1">
+                            <span className="text-[11px] text-[#a8a8a8]">Cor da Sombra:</span>
+                            <input
+                              type="color"
+                              value={style.subtitle_shadow_color || "#000000"}
+                              onChange={(e) => updateStyleAndPersist((s) => ({ ...s, subtitle_shadow_color: e.target.value }))}
+                              className="h-7 w-12 cursor-pointer rounded border border-[#262626] bg-transparent p-0"
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1186,32 +1282,46 @@ export default function EditorPage({
                   </div>
                 </div>
 
-                {/* 8. ADAPTAÇÃO DE FORMATO DE VÍDEO */}
+                {/* 8. ADAPTAÇÃO DE FORMATO DE VÍDEO & SELEÇÃO DE EXPORTAÇÃO MULTI-FORMATO */}
                 <div className="rounded-2xl border border-[#262626] bg-[#171717] p-6 space-y-4">
-                  <label className="text-xs font-bold uppercase tracking-wider text-emerald-400">📐 ADAPTAÇÃO DE FORMATO DE VÍDEO</label>
-                  <p className="text-xs text-[#a8a8a8]">
-                    Escolha o formato ideal para a plataforma desejada. O enquadramento, canvas e legendas serão adaptados automaticamente.
-                  </p>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold uppercase tracking-wider text-emerald-400">📐 ADAPTAÇÃO DE FORMATOS DE VÍDEO</label>
+                    <span className="text-[11px] text-[#a8a8a8]">Marque os formatos que deseja exportar</span>
+                  </div>
+
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {[
                       { id: "9:16", label: "📱 9:16 (1080x1920)", desc: "Reels / TikTok / Shorts" },
                       { id: "4:5", label: "📸 4:5 (1080x1350)", desc: "Feed Instagram Retrato" },
                       { id: "1:1", label: "🔲 1:1 (1080x1080)", desc: "Feed Quadrado Post" },
                       { id: "16:9", label: "📺 16:9 (1920x1080)", desc: "YouTube / Widescreen" },
-                    ].map((f) => (
-                      <button
-                        key={f.id}
-                        onClick={() => updateStyleAndPersist((s) => ({ ...s, aspect_ratio: f.id as any }))}
-                        className={`rounded-2xl border p-4 text-left transition-all ${
-                          (style.aspect_ratio || "9:16") === f.id
-                            ? "border-emerald-400 bg-emerald-500/10 shadow-lg shadow-emerald-500/10 scale-[1.02]"
-                            : "border-[#262626] bg-[#0a0a0a] text-[#a8a8a8] hover:text-white"
-                        }`}
-                      >
-                        <div className="text-xs font-bold text-white mb-1">{f.label}</div>
-                        <div className="text-[10px] text-[#737373]">{f.desc}</div>
-                      </button>
-                    ))}
+                    ].map((f) => {
+                      const isSelected = selectedExportFormats.includes(f.id);
+                      return (
+                        <div
+                          key={f.id}
+                          onClick={() => {
+                            updateStyleAndPersist((s) => ({ ...s, aspect_ratio: f.id as any }));
+                            setSelectedExportFormats((prev) =>
+                              prev.includes(f.id) ? prev.filter((item) => item !== f.id) : [...prev, f.id]
+                            );
+                          }}
+                          className={`cursor-pointer rounded-2xl border p-4 text-left transition-all ${
+                            isSelected
+                              ? "border-emerald-400 bg-emerald-500/10 shadow-lg shadow-emerald-500/10 scale-[1.02]"
+                              : "border-[#262626] bg-[#0a0a0a] text-[#a8a8a8] hover:text-white"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-bold text-white">{f.label}</span>
+                            <span className={`h-4 w-4 rounded-full border flex items-center justify-center text-[9px] font-bold ${isSelected ? "border-emerald-400 bg-emerald-400 text-black" : "border-[#404040]"}`}>
+                              {isSelected ? "✓" : ""}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-[#737373]">{f.desc}</div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -1233,29 +1343,50 @@ export default function EditorPage({
                     Revise todas as configurações e gere seu vídeo final de alta conversão.
                   </p>
 
-                  <div className="space-y-2 rounded-xl bg-[#0a0a0a] p-4 border border-[#262626] text-xs text-[#a8a8a8]">
+                  <div className="space-y-2.5 rounded-xl bg-[#0a0a0a] p-4 border border-[#262626] text-xs text-[#a8a8a8]">
                     <div className="flex justify-between">
                       <span>Layout:</span>
                       <span className="font-bold text-emerald-400">{style.layout === "fullscreen" ? "Tela Cheia 1080x1920" : "Split 50/50"}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span>Tema Legenda:</span>
-                      <span className="font-bold text-emerald-400 uppercase">{style.subtitle_theme}</span>
+                      <span>Fonte Selecionada:</span>
+                      <span className="font-bold text-emerald-400">{style.subtitle_font || "TikTok Medium"}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span>Formato Linhas:</span>
-                      <span className="font-bold text-emerald-400">{style.subtitle_max_lines === 1 ? "1 Linha Exata" : "Máximo 2 Linhas"}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Animação Karaoke:</span>
-                      <span className="font-bold text-emerald-400">{style.subtitle_animated ? "🌟 Ativa" : "Desativada"}</span>
+                      <span>Formatos Selecionados para Exportar:</span>
+                      <div className="flex gap-1.5">
+                        {selectedExportFormats.map((fmt) => (
+                          <span key={fmt} className="rounded bg-emerald-500/20 px-2 py-0.5 font-bold text-emerald-300 border border-emerald-500/30">
+                            {fmt}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                   </div>
 
-                  <button onClick={handleRender} disabled={!isCleanReady || isRendering} className="shiny-cta w-full py-4 text-base font-bold">
+                  <button
+                    onClick={async () => {
+                      setIsRendering(true);
+                      setRenderError(null);
+                      try {
+                        for (const fmt of selectedExportFormats) {
+                          await setStyleOptions(jobId, { ...style, aspect_ratio: fmt as any });
+                          await startRender(jobId);
+                        }
+                        setTimeout(() => refetch(), 1000);
+                      } catch (err) {
+                        setRenderError(err instanceof Error ? err.message : "Erro ao exportar em lote.");
+                      }
+                      setIsRendering(false);
+                    }}
+                    disabled={!isCleanReady || isRendering}
+                    className="shiny-cta w-full py-4 text-base font-bold"
+                  >
                     <span className="shiny-dots" aria-hidden="true" />
                     <span className="shiny-cta-content text-white">
-                      {isRendering ? "🎬 Renderizando Vídeo Final..." : "🚀 Exportar Vídeo Final"}
+                      {isRendering
+                        ? "⚡ Renderizando Vídeos em Lote..."
+                        : `🚀 Exportar Todos os Formatos (${selectedExportFormats.length}) em Lote →`}
                     </span>
                   </button>
 
@@ -1298,12 +1429,7 @@ export default function EditorPage({
                     : "aspect-[9/16] h-[450px]"
                 }`}
               >
-                {/* Headline Overlay Option */}
-                {headlineText && (
-                  <div className="absolute top-4 left-3 right-3 z-30 text-center font-jakarta text-xs sm:text-sm font-black text-white uppercase tracking-wider drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)]">
-                    {headlineText}
-                  </div>
-                )}
+
 
                 {style.layout === "split_screen" ? (
                   <div className="flex h-full w-full flex-col">
@@ -1409,16 +1535,15 @@ export default function EditorPage({
                         backgroundColor: style.subtitle_bg_color !== "transparent" && style.subtitle_bg_color !== "none" && style.subtitle_bg_color !== "" ? style.subtitle_bg_color : "transparent",
                         letterSpacing: `${style.subtitle_letter_spacing || 0}px`,
                         fontFamily:
-                          style.subtitle_font === "The Bold Font" ? "'Anton', 'Bebas Neue', sans-serif"
-                          : style.subtitle_font === "Bebas Neue" ? "'Bebas Neue', sans-serif"
+                          style.subtitle_font === "TikTok Medium" ? "'Proxima Nova', 'TikTok Display', sans-serif"
+                          : style.subtitle_font === "Helvetica" ? "'Helvetica Neue', Helvetica, Arial, sans-serif"
                           : style.subtitle_font === "Montserrat" ? "'Montserrat', sans-serif"
-                          : style.subtitle_font === "Impact" ? "Impact, sans-serif"
-                          : style.subtitle_font === "Poppins" ? "'Poppins', sans-serif"
-                          : style.subtitle_font === "Luckiest Guy" ? "'Luckiest Guy', cursive"
+                          : style.subtitle_font === "Lato" ? "'Lato', sans-serif"
+                          : style.subtitle_font === "The Bold Font" ? "'Anton', sans-serif"
+                          : style.subtitle_font === "Bebas Neue" ? "'Bebas Neue', sans-serif"
                           : "'Inter', sans-serif",
-                        WebkitTextStroke: style.subtitle_outline_enabled ? `1.2px ${style.subtitle_outline_color}` : "none",
-                        filter: style.subtitle_shadow_enabled ? "drop-shadow(0 3px 6px rgba(0,0,0,0.95))" : "none",
-                        boxShadow: "none",
+                        WebkitTextStroke: style.subtitle_outline_enabled ? `${style.subtitle_outline_width || 2}px ${style.subtitle_outline_color || "#000000"}` : "none",
+                        filter: style.subtitle_shadow_enabled ? `drop-shadow(0 ${style.subtitle_shadow_offset || 4}px ${style.subtitle_shadow_offset || 4}px ${style.subtitle_shadow_color || "rgba(0,0,0,0.9)"})` : "none",
                       }}
                     >
                       {renderPreviewSubContent(activeSub)}
