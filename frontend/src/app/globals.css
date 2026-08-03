@@ -334,8 +334,8 @@
 }
 
 @keyframes pulseGlow {
-  0%, 100% { box-shadow: 0 0 8px var(--cyan-glow); }
-  50% { box-shadow: 0 0 20px var(--cyan-glow); }
+  0%, 100% { box-shadow: 0 0 8px rgba(16, 185, 129, 0.4); }
+  50% { box-shadow: 0 0 20px rgba(16, 185, 129, 0.8); }
 }
 
 @keyframes progressPulse {
@@ -358,27 +358,27 @@
 
 /* Glass Card */
 .glass-card {
-  background: var(--glass-bg);
-  border: 1px solid var(--border-subtle);
-  border-radius: 1.5rem;
+  background: #171717;
+  border: 1px solid #262626;
+  border-radius: 1rem;
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   transition: all 0.3s ease;
 }
 
 .glass-card:hover {
-  background: var(--glass-bg-hover);
-  border-color: var(--border-glow);
+  background: #1c1c1c;
+  border-color: #404040;
 }
 
-/* Glass Panel (elevated) */
+/* Glass Panel (elevated surface) */
 .glass-panel {
-  background: rgba(11, 18, 32, 0.8);
-  border: 1px solid var(--border-medium);
-  border-radius: 2rem;
+  background: #171717;
+  border: 1px solid #262626;
+  border-radius: 1rem;
   backdrop-filter: blur(40px);
   -webkit-backdrop-filter: blur(40px);
-  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.6);
 }
 
 /* Pill Button */
@@ -401,24 +401,24 @@
 }
 
 .btn-primary {
-  background: var(--cyan-100);
-  color: #020617;
-  box-shadow: 0 25px 50px rgba(6, 182, 212, 0.15);
+  background: linear-gradient(to right, #10b981, #34d399);
+  color: #0a0a0a;
+  box-shadow: 0 12px 24px -8px rgba(16, 185, 129, 0.4);
 }
 
 .btn-primary:hover {
-  background: var(--cyan-50);
+  opacity: 0.92;
 }
 
 .btn-ghost {
-  background: var(--glass-bg);
-  color: var(--text-secondary);
-  border: 1px solid var(--border-medium);
+  background: #171717;
+  color: #fafafa;
+  border: 1px solid #262626;
   backdrop-filter: blur(24px);
 }
 
 .btn-ghost:hover {
-  background: var(--glass-bg-hover);
+  background: #262626;
 }
 
 /* Status Badge */
@@ -430,8 +430,8 @@
   border-radius: 9999px;
   font-size: 0.75rem;
   font-weight: 500;
-  border: 1px solid var(--border-medium);
-  background: var(--glass-bg);
+  border: 1px solid #262626;
+  background: #171717;
 }
 
 .badge-dot {
@@ -452,7 +452,7 @@
 .progress-fill {
   height: 100%;
   border-radius: 9999px;
-  background: linear-gradient(90deg, var(--cyan-400), #3b82f6, var(--cyan-300));
+  background: linear-gradient(90deg, #10b981, #34d399, #6ee7b7);
   background-size: 200% 200%;
   animation: progressPulse 2s ease-in-out infinite;
   transition: width 0.5s ease;
@@ -460,29 +460,29 @@
 
 /* Upload Zone */
 .upload-zone {
-  border: 2px dashed var(--border-medium);
+  border: 2px dashed #262626;
   border-radius: 1.5rem;
   padding: 3rem;
   text-align: center;
   transition: all 0.3s ease;
   cursor: pointer;
-  background: var(--glass-bg);
+  background: #171717;
 }
 
 .upload-zone:hover,
 .upload-zone.dragover {
-  border-color: var(--cyan-200);
-  background: rgba(103, 232, 249, 0.05);
-  box-shadow: 0 0 30px rgba(103, 232, 249, 0.1);
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.06);
+  box-shadow: 0 0 30px rgba(16, 185, 129, 0.15);
 }
 
 /* Font Families */
 .font-geist {
-  font-family: var(--font-geist) !important;
+  font-family: var(--font-sans) !important;
 }
 
 .font-jakarta {
-  font-family: var(--font-jakarta) !important;
+  font-family: var(--font-sans) !important;
 }
 
 /* Scrollbar */
@@ -493,15 +493,15 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.15);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.25);
 }
 
 /* Selection */
 ::selection {
-  background: rgba(103, 232, 249, 0.2);
-  color: var(--cyan-100);
+  background: rgba(16, 185, 129, 0.3);
+  color: #ecfdf5;
 }

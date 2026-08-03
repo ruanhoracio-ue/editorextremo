@@ -42,7 +42,7 @@ export default function EditorPage({
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(100);
-  const [highlightColor, setHighlightColor] = useState("#22D3EE");
+  const [highlightColor, setHighlightColor] = useState("#10b981");
   const [headlineText, setHeadlineText] = useState("");
 
   const [isDraggingSub, setIsDraggingSub] = useState(false);
@@ -454,7 +454,7 @@ export default function EditorPage({
 
     const activeColorClass =
       animStyle === "neon_cyan"
-        ? "text-cyan-300 drop-shadow-[0_2px_10px_rgba(34,211,238,0.9)] scale-110 font-black"
+        ? "text-emerald-300 drop-shadow-[0_2px_10px_rgba(16,185,129,0.9)] scale-110 font-bold"
         : animStyle === "box_primary"
         ? "text-emerald-300 drop-shadow-[0_2px_10px_rgba(52,211,153,0.9)] scale-110 font-black"
         : "text-yellow-300 drop-shadow-[0_2px_10px_rgba(250,204,21,0.9)] scale-110 font-black";
@@ -515,7 +515,7 @@ export default function EditorPage({
     return (
       <main className="flex min-h-[60vh] items-center justify-center">
         <div className="text-center">
-          <svg className="mx-auto h-10 w-10 animate-spin text-cyan-300" viewBox="0 0 24 24" fill="none">
+          <svg className="mx-auto h-10 w-10 animate-spin text-emerald-400" viewBox="0 0 24 24" fill="none">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
@@ -645,7 +645,7 @@ export default function EditorPage({
                         max="200"
                         value={zoomLevel}
                         onChange={(e) => setZoomLevel(parseInt(e.target.value))}
-                        className="w-28 accent-cyan-400 cursor-pointer"
+                        className="w-28 accent-emerald-400 cursor-pointer"
                       />
                     </div>
                     <button
@@ -661,7 +661,7 @@ export default function EditorPage({
                 <div className="rounded-2xl border border-white/10 bg-[#0E121E] p-6 shadow-2xl overflow-hidden min-w-0 w-full">
                   <div className="mb-3 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-400">
                     <span>🎞️ Linha do Tempo & Cortes Inteligentes</span>
-                    <span className="text-cyan-400 font-mono">{formatDuration(totalDuration)} total</span>
+                    <span className="text-emerald-400 font-mono">{formatDuration(totalDuration)} total</span>
                   </div>
 
                   <div className="relative w-full overflow-x-auto select-none py-2 min-w-0">
@@ -696,7 +696,7 @@ export default function EditorPage({
                               style={{ minWidth: `${widthPct}%` }}
                             >
                               <div className="flex items-center justify-between">
-                                <span className="rounded bg-black/70 px-1.5 py-0.5 text-[9px] font-extrabold tracking-wider text-cyan-300">
+                                <span className="rounded bg-black/70 px-1.5 py-0.5 text-[9px] font-extrabold tracking-wider text-emerald-400">
                                   {badgeLabel}
                                 </span>
                                 <span className="text-[9px] font-mono text-slate-400">{(cut.end - cut.start).toFixed(1)}s</span>
@@ -716,19 +716,19 @@ export default function EditorPage({
                           return (
                             <div
                               key={`wave-${i}`}
-                              className="w-[2px] rounded-full bg-gradient-to-t from-emerald-400 to-cyan-300 opacity-80"
+                              className="w-[2px] rounded-full bg-gradient-to-t from-emerald-500 to-emerald-300 opacity-80"
                               style={{ height: `${h}px` }}
                             />
                           );
                         })}
                       </div>
 
-                      {/* Bright Cyan Playhead Bar */}
+                      {/* Bright Emerald Playhead Bar */}
                       <div
-                        className="absolute top-0 bottom-0 w-[3px] bg-cyan-400 z-30 pointer-events-none transition-all shadow-[0_0_12px_#22D3EE]"
+                        className="absolute top-0 bottom-0 w-[3px] bg-emerald-400 z-30 pointer-events-none transition-all shadow-[0_0_12px_#10b981]"
                         style={{ left: `${(currentTime / totalDuration) * 100}%` }}
                       >
-                        <div className="h-0 w-0 border-x-[6px] border-x-transparent border-t-[8px] border-t-cyan-400 -ml-[4.5px] -mt-1" />
+                        <div className="h-0 w-0 border-x-[6px] border-x-transparent border-t-[8px] border-t-emerald-400 -ml-[4.5px] -mt-1" />
                       </div>
                     </div>
                   </div>
@@ -1278,9 +1278,9 @@ export default function EditorPage({
           {/* ═══════════ RIGHT COLUMN: PLAYER DE PRÉVIA 9:16 PERMANENTE EM TODAS AS FASES ═══════════ */}
           <div className="sticky top-16 space-y-3">
             <div className="glass-panel overflow-hidden p-3 flex flex-col items-center justify-center shadow-2xl max-h-[calc(100vh-100px)]">
-              <div className="mb-2 w-full flex items-center justify-between text-[11px] text-slate-400 font-geist">
+              <div className="mb-2 w-full flex items-center justify-between text-[11px] text-[#a8a8a8]">
                 <span>📱 Prévia Ao Vivo 9:16</span>
-                <span className="text-cyan-400 font-bold">
+                <span className="text-emerald-400 font-bold">
                   {isPlaying ? "▶ Tocando" : "⏸ Pausado"}
                 </span>
               </div>
@@ -1394,7 +1394,7 @@ export default function EditorPage({
                   <div
                     onMouseDown={handleSubMouseDown}
                     className={`absolute cursor-move select-none -translate-x-1/2 -translate-y-1/2 transition-shadow z-20 ${
-                      isDraggingSub ? "ring-2 ring-cyan-400 scale-105" : "hover:ring-1 hover:ring-white/40"
+                      isDraggingSub ? "ring-2 ring-emerald-400 scale-105" : "hover:ring-1 hover:ring-white/40"
                     }`}
                     style={{
                       left: `${style.subtitle_x_percent}%`,
