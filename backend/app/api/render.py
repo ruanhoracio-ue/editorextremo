@@ -49,6 +49,7 @@ def run_render_pipeline(job: Job) -> None:
             output_path=output_path,
             style_options=style,
             transcript=job.transcript,
+            cuts=job.cuts,
         )
 
         update_job(

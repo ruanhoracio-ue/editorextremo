@@ -70,6 +70,7 @@ def render_final_video(
     output_path: str,
     style_options: StyleOptions,
     transcript: Optional[List[TranscriptSegment]] = None,
+    cuts: Optional[List] = None,
 ) -> str:
     """Render final video on dynamic resolution canvas (9:16, 4:5, 1:1, 16:9) with clean split screen, framing Y, and dynamic zoom."""
     ffmpeg_exe = get_ffmpeg_binary()
@@ -109,8 +110,8 @@ def render_final_video(
 
     # --- Dynamic Zoom Filter ---
     current_label = "base_canvas"
-    if style_options.zoom_enabled and transcript:
-        zoom_filter = _build_varied_zoom_filter(transcript, style_options.zoom_intensity)
+    if style_options.zoom_enabled:
+        zoom_filter = _build_varied_zoom_filter(cuts, transcript, style_options.zoom_intensity)
         if zoom_filter:
             filters.append(f"[{current_label}]{zoom_filter}[zoomed_canvas]")
             current_label = "zoomed_canvas"
@@ -154,18 +155,23 @@ def render_final_video(
 
 
 def _build_varied_zoom_filter(
-    transcript: List[TranscriptSegment],
-    zoom_intensity: float = 1.15,
+    cuts: Optional[List] = None,
+    transcript: Optional[List[TranscriptSegment]] = None,
+    zoom_intensity: float = 1.18,
 ) -> str:
-    """Build FFmpeg filter that holds zoom in for ~4 seconds (blocks of 3 captions), then normal for ~4 seconds."""
-    if not transcript:
-        return ""
-
+    """Build FFmpeg filter that alternates zoom in (1.18x) on EVERY cut segment change."""
     conditions = []
-    for i, seg in enumerate(transcript):
-        block = i // 3
-        if block % 2 == 1:
-            conditions.append(f"between(time,{seg.start:.2f},{seg.end:.2f})")
+    if cuts:
+        enabled_cuts = [c for c in cuts if getattr(c, "enabled", True)]
+        for i, cut in enumerate(enabled_cuts):
+            start = getattr(cut, "start", cut.get("start", 0) if isinstance(cut, dict) else 0)
+            end = getattr(cut, "end", cut.get("end", 0) if isinstance(cut, dict) else 0)
+            if i % 2 == 1:
+                conditions.append(f"between(time,{start:.2f},{end:.2f})")
+    elif transcript:
+        for i, seg in enumerate(transcript):
+            if i % 2 == 1:
+                conditions.append(f"between(time,{seg.start:.2f},{seg.end:.2f})")
 
     if not conditions:
         return ""
@@ -263,8 +269,8 @@ def _generate_ass_subtitles(
         back_color = _hex_to_ass_color(style.subtitle_bg_color, "80")
 
     border_style = 1
-    outline_w = 3 if style.subtitle_outline_enabled else 0
-    shadow_d = 1 if style.subtitle_shadow_enabled else 0
+    outline_w = getattr(style, "subtitle_outline_width", 2) if style.subtitle_outline_enabled else 0
+    shadow_d = getattr(style, "subtitle_shadow_offset", 3) if style.subtitle_shadow_enabled else 0
 
     theme = style.subtitle_theme.value if hasattr(style.subtitle_theme, "value") else str(style.subtitle_theme)
 
@@ -272,22 +278,14 @@ def _generate_ass_subtitles(
         border_style = 3
         back_color = "&H00000000"
         primary_color = "&H00FFFFFF"
-        outline_w = 0
-        shadow_d = 0
     elif theme == "energy":
         border_style = 3
         back_color = "&H00FFFFFF"
         primary_color = "&H00000000"
-        outline_w = 0
-        shadow_d = 0
     elif theme == "million":
         primary_color = "&H00FFFFFF"
-        shadow_d = 2
-        outline_w = 0
     elif theme == "minimal_white":
         primary_color = "&H00FFFFFF"
-        outline_w = 0
-        shadow_d = 0
 
     header = f"""[Script Info]
 Title: Editu Subtitles

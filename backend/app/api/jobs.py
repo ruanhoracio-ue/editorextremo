@@ -262,6 +262,7 @@ def _run_render_pipeline(job: Job):
             output_path=final_path,
             style_options=job.style_options,
             transcript=job.transcript,
+            cuts=job.cuts,
         )
 
         update_job(

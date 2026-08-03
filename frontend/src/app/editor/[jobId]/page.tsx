@@ -1024,18 +1024,41 @@ export default function EditorPage({
                         </button>
                       </div>
 
+                      {/* Quick Presets */}
+                      <div className="flex gap-2 pt-1">
+                        {[
+                          { label: "Nenhum", width: 0, enable: false },
+                          { label: "Suave (1.5px)", width: 1.5, enable: true },
+                          { label: "Médio (3px)", width: 3, enable: true },
+                          { label: "Forte (5px)", width: 5, enable: true },
+                        ].map((p) => (
+                          <button
+                            key={p.label}
+                            onClick={() => updateStyleAndPersist((s) => ({ ...s, subtitle_outline_enabled: p.enable, subtitle_outline_width: p.width }))}
+                            className={`flex-1 rounded-lg border py-1 px-1 text-[10px] font-bold transition ${
+                              (style.subtitle_outline_enabled === p.enable && (!p.enable || (style.subtitle_outline_width || 2) === p.width))
+                                ? "border-emerald-400 bg-emerald-500/20 text-emerald-300"
+                                : "border-[#262626] bg-[#171717] text-[#737373] hover:text-white"
+                            }`}
+                          >
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+
                       {style.subtitle_outline_enabled && (
-                        <div className="space-y-3 pt-1">
+                        <div className="space-y-3 pt-2 border-t border-[#262626]">
                           <div className="flex items-center justify-between">
-                            <span className="text-[11px] text-[#a8a8a8]">Espessura do Traçado:</span>
+                            <span className="text-[11px] text-[#a8a8a8]">Espessura Fina:</span>
                             <span className="font-mono text-xs font-bold text-emerald-400">{style.subtitle_outline_width || 2}px</span>
                           </div>
                           <input
                             type="range"
                             min="1"
                             max="8"
+                            step="0.5"
                             value={style.subtitle_outline_width || 2}
-                            onChange={(e) => updateStyleAndPersist((s) => ({ ...s, subtitle_outline_width: parseInt(e.target.value) }))}
+                            onChange={(e) => updateStyleAndPersist((s) => ({ ...s, subtitle_outline_width: parseFloat(e.target.value) }))}
                             className="w-full accent-emerald-400 cursor-pointer"
                           />
 
@@ -1066,8 +1089,30 @@ export default function EditorPage({
                         </button>
                       </div>
 
+                      {/* Quick Presets */}
+                      <div className="flex gap-2 pt-1">
+                        {[
+                          { label: "Nenhuma", offset: 0, enable: false },
+                          { label: "Suave", offset: 3, enable: true },
+                          { label: "Projetada", offset: 6, enable: true },
+                          { label: "Marcada", offset: 10, enable: true },
+                        ].map((p) => (
+                          <button
+                            key={p.label}
+                            onClick={() => updateStyleAndPersist((s) => ({ ...s, subtitle_shadow_enabled: p.enable, subtitle_shadow_offset: p.offset }))}
+                            className={`flex-1 rounded-lg border py-1 px-1 text-[10px] font-bold transition ${
+                              (style.subtitle_shadow_enabled === p.enable && (!p.enable || (style.subtitle_shadow_offset || 4) === p.offset))
+                                ? "border-emerald-400 bg-emerald-500/20 text-emerald-300"
+                                : "border-[#262626] bg-[#171717] text-[#737373] hover:text-white"
+                            }`}
+                          >
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+
                       {style.subtitle_shadow_enabled && (
-                        <div className="space-y-3 pt-1">
+                        <div className="space-y-3 pt-2 border-t border-[#262626]">
                           <div className="flex items-center justify-between">
                             <span className="text-[11px] text-[#a8a8a8]">Intensidade/Deslocamento:</span>
                             <span className="font-mono text-xs font-bold text-emerald-400">{style.subtitle_shadow_offset || 4}px</span>
@@ -1076,6 +1121,7 @@ export default function EditorPage({
                             type="range"
                             min="1"
                             max="12"
+                            step="1"
                             value={style.subtitle_shadow_offset || 4}
                             onChange={(e) => updateStyleAndPersist((s) => ({ ...s, subtitle_shadow_offset: parseInt(e.target.value) }))}
                             className="w-full accent-emerald-400 cursor-pointer"
