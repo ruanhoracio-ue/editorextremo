@@ -53,6 +53,7 @@ export default function EditorPage({
   const videoRef = useRef<HTMLVideoElement>(null);
   const topVideoRef = useRef<HTMLVideoElement>(null);
   const gradeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const transcriptTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const splitInputRef = useRef<HTMLInputElement>(null);
   const userTouchedStyle = useRef(false);
 
@@ -123,12 +124,41 @@ export default function EditorPage({
       videoRef.current.currentTime = newTime;
       setCurrentTime(newTime);
     }
+    if (topVideoRef.current) {
+      topVideoRef.current.currentTime = newTime;
+    }
   };
 
-  // EXACT SUBTITLE TIMING LOOKUP (NO TRAILING EXTENSION DELAY)
-  const activeSubIndex = localTranscript.findIndex(
-    (s) => currentTime >= s.start - 0.05 && currentTime <= s.end + 0.15
-  );
+  // PRECISE SUBTITLE SYNC — find the segment whose word-level time range
+  // best covers currentTime. No artificial tolerances that cause overlapping matches.
+  const activeSubIndex = (() => {
+    let bestIdx = -1;
+    let bestOverlap = -Infinity;
+    for (let i = 0; i < localTranscript.length; i++) {
+      const s = localTranscript[i];
+      // Exact match: currentTime falls within the segment's word boundaries
+      if (currentTime >= s.start && currentTime <= s.end) {
+        // Prefer the tightest match (smallest segment duration)
+        const overlap = s.end - s.start;
+        if (bestIdx === -1 || overlap < bestOverlap) {
+          bestIdx = i;
+          bestOverlap = overlap;
+        }
+      }
+    }
+    // Small grace window (50ms after end) only if no exact match found,
+    // to handle tiny gaps between consecutive segments
+    if (bestIdx === -1) {
+      for (let i = 0; i < localTranscript.length; i++) {
+        const s = localTranscript[i];
+        if (currentTime > s.end && currentTime <= s.end + 0.05) {
+          bestIdx = i;
+          break;
+        }
+      }
+    }
+    return bestIdx;
+  })();
   const activeSub = activeSubIndex !== -1 ? localTranscript[activeSubIndex] : null;
 
   // Multi-File Split Carousel
@@ -230,8 +260,30 @@ export default function EditorPage({
 
   const handleTranscriptTextChange = (index: number, newText: string) => {
     const updated = [...localTranscript];
-    updated[index] = { ...updated[index], text: newText };
+    const seg = updated[index];
+    // Update text AND redistribute word timings so animated preview reflects edits
+    const newWords = newText.split(/\s+/).filter(Boolean);
+    const oldWords = seg.words || [];
+    const segDuration = seg.end - seg.start;
+    const wordDuration = newWords.length > 0 ? segDuration / newWords.length : segDuration;
+    const redistributedWords = newWords.map((word, wi) => ({
+      word,
+      start: seg.start + wi * wordDuration,
+      end: seg.start + (wi + 1) * wordDuration,
+      confidence: oldWords[wi]?.confidence ?? 1.0,
+    }));
+    updated[index] = { ...seg, text: newText, words: redistributedWords };
     setLocalTranscript(updated);
+
+    // Auto-save transcript with debounce (1.5s)
+    if (transcriptTimer.current) clearTimeout(transcriptTimer.current);
+    transcriptTimer.current = setTimeout(async () => {
+      try {
+        await updateTranscript(jobId, updated);
+      } catch (err) {
+        console.error("Auto-save transcript error:", err);
+      }
+    }, 1500);
   };
 
   const copyTranscriptText = () => {
@@ -295,44 +347,53 @@ export default function EditorPage({
     updateStyleAndPersist((s) => ({ ...s, subtitle_theme: theme, ...presets[theme] }));
   };
 
-  // STRICT 1 OR 2 LINE FORMATTING
+  // STRICT 1 OR 2 LINE FORMATTING — groups words into lines respecting maxChars/maxLines
+  const wrapWordsIntoLines = (words: string[], maxChars: number, maxLines: number): string[][] => {
+    const lines: string[][] = [];
+    let currentLine: string[] = [];
+    let currentLen = 0;
+
+    for (const w of words) {
+      const newLen = currentLen + (currentLine.length > 0 ? 1 : 0) + w.length;
+      if (newLen <= maxChars || currentLine.length === 0) {
+        currentLine.push(w);
+        currentLen = newLen;
+      } else {
+        lines.push(currentLine);
+        currentLine = [w];
+        currentLen = w.length;
+      }
+    }
+    if (currentLine.length > 0) lines.push(currentLine);
+
+    // Clamp to maxLines
+    if (maxLines === 1) {
+      return [words]; // single line with all words
+    } else if (maxLines === 2 && lines.length > 2) {
+      return [lines[0], lines.slice(1).flat()];
+    }
+    return lines;
+  };
+
   const formatSubText = (rawText: string) => {
     const isUpper = ["andromeda", "million"].includes(style.subtitle_theme);
     const text = isUpper ? rawText.toUpperCase() : rawText;
-
     const maxChars = style.subtitle_max_chars_per_line || 25;
     const maxLines = style.subtitle_max_lines || 1;
-
-    const words = text.split(" ");
-    const lines: string[] = [];
-    let currentLine = "";
-
-    for (const w of words) {
-      if ((currentLine + " " + w).trim().length <= maxChars) {
-        currentLine = (currentLine + " " + w).trim();
-      } else {
-        if (currentLine) lines.push(currentLine);
-        currentLine = w;
-      }
-    }
-    if (currentLine) lines.push(currentLine);
-
-    if (maxLines === 1) {
-      return lines.join(" ");
-    } else if (maxLines === 2) {
-      if (lines.length <= 2) return lines.join("\n");
-      return [lines[0], lines.slice(1).join(" ")].join("\n");
-    }
-    return lines.join("\n");
+    const words = text.split(/\s+/).filter(Boolean);
+    const lines = wrapWordsIntoLines(words, maxChars, maxLines);
+    return lines.map(l => l.join(" ")).join("\n");
   };
 
-  // Render Subtitle Content in Preview
+  // Render Subtitle Content in Preview — respects maxLines even with animation
   const renderPreviewSubContent = (sub: TranscriptSegment) => {
     if (!style.subtitle_animated || !sub.words || sub.words.length === 0) {
       return formatSubText(sub.text);
     }
 
     const isUpper = ["andromeda", "million"].includes(style.subtitle_theme);
+    const maxChars = style.subtitle_max_chars_per_line || 25;
+    const maxLines = style.subtitle_max_lines || 1;
     const animStyle = style.subtitle_animation_style || "bounce_yellow";
 
     const activeColorClass =
@@ -342,20 +403,31 @@ export default function EditorPage({
         ? "text-emerald-300 drop-shadow-[0_2px_10px_rgba(52,211,153,0.9)] scale-110 font-black"
         : "text-yellow-300 drop-shadow-[0_2px_10px_rgba(250,204,21,0.9)] scale-110 font-black";
 
-    return sub.words.map((w, idx) => {
-      const isWordActive = currentTime >= w.start && currentTime <= w.end;
-      const wordTxt = isUpper ? w.word.toUpperCase() : w.word;
-      return (
-        <span
-          key={idx}
-          className={`inline-block transition-all duration-150 mr-1.5 ${
-            isWordActive ? activeColorClass : "opacity-80"
-          }`}
-        >
-          {wordTxt}
-        </span>
-      );
-    });
+    // Group words into lines respecting maxChars and maxLines
+    const wordTexts = sub.words.map(w => isUpper ? w.word.toUpperCase() : w.word);
+    const lines = wrapWordsIntoLines(wordTexts, maxChars, maxLines);
+
+    // Build a flat index map so we can match sub.words[i] -> which line it belongs to
+    let wordIdx = 0;
+    return lines.map((lineWords, lineIdx) => (
+      <span key={`line-${lineIdx}`} className="block">
+        {lineWords.map((wordTxt) => {
+          const wObj = sub.words[wordIdx];
+          const isWordActive = wObj ? currentTime >= wObj.start && currentTime <= wObj.end : false;
+          wordIdx++;
+          return (
+            <span
+              key={wordIdx}
+              className={`inline-block transition-all duration-150 mr-1.5 ${
+                isWordActive ? activeColorClass : "opacity-80"
+              }`}
+            >
+              {wordTxt}
+            </span>
+          );
+        })}
+      </span>
+    ));
   };
 
   if (error) {
@@ -544,7 +616,10 @@ export default function EditorPage({
                             <div
                               key={`cut-${i}`}
                               onClick={() => {
-                                handleSeek(cut.start);
+                                // Map original cut.start to clean video time offset
+                                const enabledBefore = localCuts.slice(0, i).filter(c => c.enabled);
+                                const cleanOffset = enabledBefore.reduce((acc, c) => acc + (c.end - c.start), 0);
+                                handleSeek(cleanOffset);
                                 handleToggleCut(i);
                               }}
                               className={`relative h-full flex-1 rounded-lg border transition-all cursor-pointer flex flex-col justify-between p-2 overflow-hidden ${
@@ -1077,11 +1152,11 @@ export default function EditorPage({
                     }}
                   >
                     <span
-                      className="inline-block rounded-lg px-3.5 py-1.5 font-bold text-center leading-snug max-w-[270px] whitespace-pre-line shadow-lg"
+                      className="inline-block rounded-lg px-3.5 py-1.5 font-bold text-center leading-snug max-w-[270px] whitespace-pre-line"
                       style={{
                         fontSize: `${Math.max(10, style.subtitle_font_size / 5)}px`,
                         color: style.subtitle_color,
-                        backgroundColor: style.subtitle_bg_color !== "transparent" ? style.subtitle_bg_color : undefined,
+                        backgroundColor: style.subtitle_bg_color !== "transparent" && style.subtitle_bg_color !== "none" && style.subtitle_bg_color !== "" ? style.subtitle_bg_color : "transparent",
                         letterSpacing: `${style.subtitle_letter_spacing || 0}px`,
                         fontFamily:
                           style.subtitle_font === "Bebas Neue" ? "'Bebas Neue', sans-serif"
@@ -1090,6 +1165,7 @@ export default function EditorPage({
                           : "'Inter', sans-serif",
                         WebkitTextStroke: style.subtitle_outline_enabled ? `1.2px ${style.subtitle_outline_color}` : "none",
                         filter: style.subtitle_shadow_enabled ? "drop-shadow(0 3px 6px rgba(0,0,0,0.95))" : "none",
+                        boxShadow: "none",
                       }}
                     >
                       {renderPreviewSubContent(activeSub)}

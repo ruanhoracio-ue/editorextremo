@@ -301,13 +301,15 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         if is_animated and seg.words:
             # Word-by-word karaoke. Use \kt to jump the karaoke timer to each
-            # word's real offset (relative to the dialogue start) so pauses
-            # between words never shift the fill out of sync.
+            # word's real offset (relative to the dialogue start) so highlights
+            # are perfectly synchronized with each spoken word.
+            # Use words[0].start as the base reference (not seg.start) to avoid
+            # any pre-roll offset that would shift all karaoke timings.
             karaoke_parts = []
-            seg_start_ts = seg.start
+            base_ts = seg.words[0].start
             for w in seg.words:
                 dur_cs = int(max(0.1, w.end - w.start) * 100)
-                offset_cs = max(0, int((w.start - seg_start_ts) * 100))
+                offset_cs = max(0, int((w.start - base_ts) * 100))
                 word_txt = w.word.upper() if is_upper else w.word
                 karaoke_parts.append(f"{{\\kt{offset_cs}}}{{\\kf{dur_cs}}}{word_txt}")
             text = " ".join(karaoke_parts)

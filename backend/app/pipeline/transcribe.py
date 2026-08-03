@@ -72,8 +72,8 @@ def _chunk_into_short_captions(
 ) -> List[TranscriptSegment]:
     """
     Split transcript segments into punchy 3-4 word captions.
-    Starts caption 80ms BEFORE speech for instant response and ends 100ms AFTER speech
-    so captions never lag behind the voice.
+    Segment start/end are derived exactly from word timestamps so subtitles
+    are perfectly synchronized with the spoken audio — no artificial offsets.
     """
     result: List[TranscriptSegment] = []
 
@@ -87,9 +87,8 @@ def _chunk_into_short_captions(
         for w in words:
             chunk_words.append(w)
             if len(chunk_words) >= max_words or w.word.endswith((".", "?", "!", ";")):
-                # 80ms pre-roll start so caption appears instantly when voice begins
-                start_time = max(0.0, round(chunk_words[0].start - 0.08, 3))
-                end_time = round(chunk_words[-1].end + 0.10, 3)
+                start_time = round(chunk_words[0].start, 3)
+                end_time = round(chunk_words[-1].end, 3)
                 text = " ".join(cw.word for cw in chunk_words)
                 result.append(TranscriptSegment(
                     text=text,
@@ -100,8 +99,8 @@ def _chunk_into_short_captions(
                 chunk_words = []
 
         if chunk_words:
-            start_time = max(0.0, round(chunk_words[0].start - 0.08, 3))
-            end_time = round(chunk_words[-1].end + 0.10, 3)
+            start_time = round(chunk_words[0].start, 3)
+            end_time = round(chunk_words[-1].end, 3)
             text = " ".join(cw.word for cw in chunk_words)
             result.append(TranscriptSegment(
                 text=text,
