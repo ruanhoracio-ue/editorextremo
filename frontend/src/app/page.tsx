@@ -78,17 +78,14 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Headline */}
-          <div className="animate-in text-center">
-            <h1 className="mx-auto max-w-5xl text-4xl font-semibold leading-[1.2] tracking-tighter text-[#fafafa] sm:text-5xl lg:text-7xl font-sans">
+          {/* Headline Container with Shiny Dots (Quadrinholados Animados do Botão) */}
+          <div className="animate-in relative overflow-hidden rounded-3xl border border-[#262626] bg-[#171717]/60 p-8 sm:p-12 text-center backdrop-blur-xl shadow-2xl max-w-5xl mx-auto">
+            <div className="shiny-dots opacity-80" aria-hidden="true" />
+            <h1 className="relative z-10 text-4xl font-semibold leading-[1.15] tracking-tighter text-[#fafafa] sm:text-5xl lg:text-7xl font-sans">
               Edição de vídeo com{" "}
-              <span className="relative inline-block hover-text-shine cursor-default font-extrabold pb-2 mx-1">
-                alta conversão automática
-                <span className="animate-sweep-underline" aria-hidden="true" />
-              </span>
-              .
+              <span className="hover-text-shine cursor-default font-extrabold">alta conversão automática</span>.
             </h1>
-            <p className="mx-auto mt-6 max-w-2xl text-base leading-7 text-[#a8a8a8] sm:text-lg">
+            <p className="relative z-10 mx-auto mt-6 max-w-2xl text-base leading-7 text-[#a8a8a8] sm:text-lg">
               O <strong className="text-white font-semibold">Editor</strong> transcreve, remove silêncios, aplica color grade, zoom dinâmico e gera
               legendas perfeitamente sincronizadas. Envie seu vídeo cru e receba o resultado final pronto em minutos.
             </p>
