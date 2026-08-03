@@ -2,21 +2,45 @@ import { Job, StyleOptions, CutSegment, TranscriptSegment, ColorGradeOptions } f
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-export async function uploadVideo(file: File): Promise<{ job_id: string; status: string }> {
-  const formData = new FormData();
-  formData.append("file", file);
+export function uploadVideo(
+  file: File,
+  onProgress?: (pct: number) => void
+): Promise<{ job_id: string; status: string }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const formData = new FormData();
+    formData.append("file", file);
 
-  const res = await fetch(`${API_BASE}/api/upload`, {
-    method: "POST",
-    body: formData,
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) {
+        const pct = Math.round((e.loaded / e.total) * 100);
+        onProgress(pct);
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText));
+        } catch {
+          reject(new Error("Resposta inválida do servidor"));
+        }
+      } else {
+        try {
+          const err = JSON.parse(xhr.responseText);
+          reject(new Error(err.detail || "Erro ao fazer upload do vídeo"));
+        } catch {
+          reject(new Error(`Erro ${xhr.status} no upload`));
+        }
+      }
+    };
+
+    xhr.onerror = () => reject(new Error("Falha na conexão ao enviar o vídeo. Verifique sua conexão."));
+    xhr.ontimeout = () => reject(new Error("Tempo limite excedido ao enviar o vídeo."));
+
+    xhr.open("POST", `${API_BASE}/api/upload`);
+    xhr.send(formData);
   });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Erro ao fazer upload do vídeo");
-  }
-
-  return res.json();
 }
 
 export async function fetchJob(jobId: string): Promise<Job> {

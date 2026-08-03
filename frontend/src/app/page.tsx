@@ -18,21 +18,17 @@ export default function HomePage() {
       setError(null);
       setFileName(file.name);
       setIsUploading(true);
-      setUploadProgress(10);
+      setUploadProgress(5);
 
       try {
-        const progressTimer = setInterval(() => {
-          setUploadProgress((prev) => Math.min(prev + 5, 85));
-        }, 300);
+        const result = await uploadVideo(file, (pct) => {
+          setUploadProgress(Math.max(5, Math.min(pct, 99)));
+        });
 
-        const result = await uploadVideo(file);
-
-        clearInterval(progressTimer);
         setUploadProgress(100);
-
         setTimeout(() => {
           router.push(`/editor/${result.job_id}`);
-        }, 500);
+        }, 400);
       } catch (err) {
         setError(
           err instanceof Error ? err.message : "Erro ao fazer upload do vídeo"
