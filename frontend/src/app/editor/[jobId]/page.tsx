@@ -57,19 +57,30 @@ export default function EditorPage({
   const splitInputRef = useRef<HTMLInputElement>(null);
   const userTouchedStyle = useRef(false);
 
-  // Sync from job on initial load only
+  // Track when we've done our initial data sync from a finished job
+  const hasInitialSyncedFinishedJob = useRef(false);
+
+  // Sync from job on initial load and when processing finishes
   useEffect(() => {
     if (!job) return;
     if (job.style_options && !userTouchedStyle.current) {
       setStyle(job.style_options);
     }
+
+    const isJobFinished = job.status === "clean_ready" || job.status === "done";
+
+    // Eagerly load cuts/transcript if empty (so user sees something while processing)
     if (job.cuts && localCuts.length === 0) setLocalCuts(job.cuts);
     if (job.transcript && localTranscript.length === 0) setLocalTranscript(job.transcript);
 
-    if (job.status === "clean_ready" && isReprocessing) {
-      if (job.cuts) setLocalCuts(job.cuts);
-      if (job.transcript) setLocalTranscript(job.transcript);
-      setIsReprocessing(false);
+    // Force sync when job finishes its initial pipeline or a reprocess
+    if (isJobFinished) {
+      if (!hasInitialSyncedFinishedJob.current || isReprocessing) {
+        if (job.cuts) setLocalCuts(job.cuts);
+        if (job.transcript) setLocalTranscript(job.transcript);
+        hasInitialSyncedFinishedJob.current = true;
+        setIsReprocessing(false);
+      }
     }
   }, [job, isReprocessing, localCuts.length, localTranscript.length]);
 
@@ -409,8 +420,10 @@ export default function EditorPage({
 
     // Build a flat index map so we can match sub.words[i] -> which line it belongs to
     let wordIdx = 0;
+    const spacingPx = style.subtitle_letter_spacing || 0;
+
     return lines.map((lineWords, lineIdx) => (
-      <span key={`line-${lineIdx}`} className="block">
+      <span key={`line-${lineIdx}`} className="block leading-snug">
         {lineWords.map((wordTxt) => {
           const wObj = sub.words[wordIdx];
           const isWordActive = wObj ? currentTime >= wObj.start && currentTime <= wObj.end : false;
@@ -418,9 +431,12 @@ export default function EditorPage({
           return (
             <span
               key={wordIdx}
-              className={`inline-block transition-all duration-150 mr-1.5 ${
+              className={`inline-block transition-all duration-150 ${
                 isWordActive ? activeColorClass : "opacity-80"
               }`}
+              style={{
+                marginRight: `calc(0.3em + ${spacingPx * 0.4}px)`
+              }}
             >
               {wordTxt}
             </span>
@@ -925,7 +941,33 @@ export default function EditorPage({
                 {/* 6. CONTROLES RIGOROSOS DE TEXTO */}
                 <div className="rounded-2xl border border-white/10 bg-[#0E121E] p-6 space-y-4">
                   <label className="text-xs font-black uppercase tracking-wider text-cyan-400 font-geist">CONTROLES RIGOROSOS DE TEXTO</label>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  
+                  {/* Fonte Tipográfica */}
+                  <div>
+                    <span className="block text-xs font-medium text-slate-400 mb-1.5 font-geist">Fonte da Legenda:</span>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {[
+                        { name: "Inter", label: "Inter (Padrão)" },
+                        { name: "Montserrat", label: "Montserrat" },
+                        { name: "Bebas Neue", label: "Bebas Neue" },
+                        { name: "Impact", label: "Impact" },
+                      ].map((f) => (
+                        <button
+                          key={f.name}
+                          onClick={() => updateStyleAndPersist((s) => ({ ...s, subtitle_font: f.name as any }))}
+                          className={`rounded-xl border py-2 text-xs font-bold transition font-geist ${
+                            style.subtitle_font === f.name
+                              ? "border-cyan-400 bg-cyan-400/20 text-cyan-300"
+                              : "border-white/10 bg-black/40 text-slate-400 hover:text-white"
+                          }`}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
                     <div>
                       <span className="block text-xs font-medium text-slate-400 mb-1.5 font-geist">Linhas da Legenda:</span>
                       <div className="grid grid-cols-2 gap-2">
@@ -943,6 +985,21 @@ export default function EditorPage({
                           </button>
                         ))}
                       </div>
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between text-xs text-slate-400 mb-1.5 font-geist">
+                        <span>Tamanho da Fonte:</span>
+                        <span className="font-mono text-cyan-300 font-bold">{style.subtitle_font_size || 58}px</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="30"
+                        max="90"
+                        value={style.subtitle_font_size || 58}
+                        onChange={(e) => updateStyleAndPersist((s) => ({ ...s, subtitle_font_size: parseInt(e.target.value) }))}
+                        className="w-full accent-cyan-400 cursor-pointer"
+                      />
                     </div>
 
                     <div>
@@ -968,7 +1025,7 @@ export default function EditorPage({
                       <input
                         type="range"
                         min="0"
-                        max="10"
+                        max="12"
                         value={style.subtitle_letter_spacing || 0}
                         onChange={(e) => updateStyleAndPersist((s) => ({ ...s, subtitle_letter_spacing: parseInt(e.target.value) }))}
                         className="w-full accent-cyan-400 cursor-pointer"
@@ -1152,9 +1209,9 @@ export default function EditorPage({
                     }}
                   >
                     <span
-                      className="inline-block rounded-lg px-3.5 py-1.5 font-bold text-center leading-snug max-w-[270px] whitespace-pre-line"
+                      className="inline-block rounded-lg px-3.5 py-1.5 font-bold text-center leading-snug max-w-[280px] whitespace-pre-line"
                       style={{
-                        fontSize: `${Math.max(10, style.subtitle_font_size / 5)}px`,
+                        fontSize: `${Math.max(12, Math.round((style.subtitle_font_size || 58) * 0.23))}px`,
                         color: style.subtitle_color,
                         backgroundColor: style.subtitle_bg_color !== "transparent" && style.subtitle_bg_color !== "none" && style.subtitle_bg_color !== "" ? style.subtitle_bg_color : "transparent",
                         letterSpacing: `${style.subtitle_letter_spacing || 0}px`,
