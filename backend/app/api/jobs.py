@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, BackgroundTasks, UploadFile, File
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.models.schemas import (
     Job,
@@ -271,6 +271,12 @@ def _run_render_pipeline(job: Job):
             final_video=final_path,
             progress=100,
         )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        update_job(job.id, status=JobStatus.ERROR, error_message=str(e))
+
+
 class BatchRenderPayload(BaseModel):
     formats: List[str] = Field(default_factory=lambda: ["9:16", "4:5", "1:1", "16:9"])
 
