@@ -16,45 +16,54 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="pt-BR" suppressHydrationWarning>
-      <body className="min-h-screen overflow-x-hidden antialiased" suppressHydrationWarning>
-        {/* Fixed Background Gradient */}
-        <div className="pointer-events-none fixed inset-0 -z-50 bg-radial-gradient" />
-        {/* Noise Texture */}
-        <div className="pointer-events-none fixed inset-0 -z-40 bg-noise" />
+    <html lang="pt-BR" className="dark" suppressHydrationWarning>
+      <body className="min-h-screen bg-[#0a0a0a] text-[#fafafa] font-sans antialiased ds-app" suppressHydrationWarning>
+        {/* SVG Global Brand Gradient Defs */}
+        <svg width="0" height="0" className="absolute pointer-events-none">
+          <defs>
+            <linearGradient id="brand-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop stopColor="#10b981" offset="0%" />
+              <stop stopColor="#34d399" offset="100%" />
+            </linearGradient>
+          </defs>
+        </svg>
 
-        <div className="mx-auto min-h-screen w-full max-w-[1440px] border-x border-white/[0.06]">
-          {/* Header */}
-          <header className="sticky top-0 z-50 border-b border-white/[0.06] bg-[#080c14]/70 backdrop-blur-2xl animate-in">
-            <nav className="mx-auto flex h-16 w-full max-w-[1360px] items-center justify-between px-5 sm:px-8 lg:px-10">
+        {/* Page Dot Grid Layer (Conversão Extrema) */}
+        <div
+          className="fixed inset-0 -z-50 pointer-events-none"
+          style={{
+            backgroundImage: "radial-gradient(circle, rgba(250, 250, 250, 0.05) 1px, transparent 1.6px)",
+            backgroundSize: "24px 24px",
+          }}
+        />
+
+        <div className="mx-auto min-h-screen w-full max-w-[1440px] border-x border-[#262626]">
+          {/* Conversão Extrema Header */}
+          <header className="sticky top-0 z-50 border-b border-[#262626] bg-[#0a0a0a]/80 backdrop-blur-md">
+            <nav className="mx-auto flex h-16 w-full max-w-[1360px] items-center justify-between px-5 sm:px-8">
               <a href="/" className="group flex items-center gap-3 transition hover:opacity-90">
                 <img
                   src="/logo.svg"
                   alt="Editu"
-                  className="h-8 w-auto object-contain"
+                  className="h-7 w-auto object-contain"
                 />
               </a>
 
-              <div className="hidden items-center gap-8 md:flex">
-                <a
-                  href="#features"
-                  className="text-sm text-slate-400 transition hover:text-white font-geist"
-                >
+              <div className="hidden items-center gap-8 md:flex text-sm text-[#a8a8a8]">
+                <a href="#features" className="transition hover:text-white">
                   Funcionalidades
                 </a>
-                <a
-                  href="#how"
-                  className="text-sm text-slate-400 transition hover:text-white font-geist"
-                >
+                <a href="#how" className="transition hover:text-white">
                   Como funciona
                 </a>
               </div>
 
               <a
                 href="#upload"
-                className="hidden rounded-full border border-cyan-200/20 bg-cyan-100 px-5 py-2 text-sm font-semibold text-slate-950 shadow-lg shadow-cyan-950/20 transition hover:scale-[1.03] hover:bg-cyan-50 sm:inline-flex font-geist"
+                className="shiny-cta px-5 py-2 text-xs font-semibold sm:inline-flex"
               >
-                Começar agora
+                <span className="shiny-dots" aria-hidden="true" />
+                <span className="shiny-cta-content text-white">Começar agora →</span>
               </a>
             </nav>
           </header>
@@ -62,8 +71,8 @@ export default function RootLayout({
           {children}
 
           {/* Footer */}
-          <footer className="border-t border-white/[0.06] p-10 text-center text-sm text-slate-500 font-geist">
-            © 2026 Editu. Edição automática de vídeo com inteligência.
+          <footer className="border-t border-[#262626] p-8 text-center text-xs text-[#737373]">
+            © 2026 Editu. Edição automática de vídeo com alta conversão.
           </footer>
         </div>
       </body>

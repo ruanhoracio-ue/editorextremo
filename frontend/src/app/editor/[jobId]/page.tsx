@@ -536,16 +536,16 @@ export default function EditorPage({
   const segmentBadges = ["HOOK", "DINÂMICA", "RECURSOS", "CONTEÚDO", "CTA"];
 
   return (
-    <main className="min-h-screen bg-[#07090E] text-slate-100 font-geist" onMouseUp={handleMouseUp}>
+    <main className="min-h-screen bg-[#0a0a0a] text-[#fafafa] font-sans" onMouseUp={handleMouseUp}>
       {/* ═══════════ HEADER COM FASES E STATUS ═══════════ */}
-      <header className="sticky top-0 z-40 border-b border-cyan-500/10 bg-[#0A0D16]/90 backdrop-blur-md px-6 py-3.5">
+      <header className="sticky top-0 z-40 border-b border-[#262626] bg-[#0a0a0a]/90 backdrop-blur-md px-6 py-3.5">
         <div className="mx-auto flex max-w-[1440px] items-center justify-between">
           <div className="flex items-center gap-4">
             <div>
-              <h1 className="text-sm font-bold text-white font-jakarta truncate max-w-[320px]">
+              <h1 className="text-sm font-bold text-white font-sans truncate max-w-[320px]">
                 {job.original_filename || "Vídeo sem nome"}
               </h1>
-              <p className="text-[11px] text-cyan-300 font-medium">
+              <p className="text-[11px] text-emerald-400 font-medium">
                 {job.status === "done"
                   ? "✨ Vídeo finalizado pronto para baixar!"
                   : job.status === "error"
@@ -558,33 +558,33 @@ export default function EditorPage({
           </div>
 
           {/* PROCESS STEPPER TABS */}
-          <div className="flex items-center rounded-2xl bg-black/60 p-1.5 border border-white/10">
+          <div className="flex items-center rounded-full bg-[#171717] p-1 border border-[#262626]">
             <button
               onClick={() => setActiveTab("corte")}
-              className={`flex items-center gap-2 rounded-xl px-5 py-2 text-xs font-bold transition-all font-jakarta ${
+              className={`flex items-center gap-2 rounded-full px-5 py-1.5 text-xs font-semibold transition-all ${
                 activeTab === "corte"
-                  ? "bg-gradient-to-r from-cyan-400 to-emerald-400 text-slate-950 shadow-lg shadow-cyan-500/20 scale-[1.02]"
-                  : "text-slate-400 hover:text-white hover:bg-white/5"
+                  ? "bg-brand-gradient text-[#0a0a0a] shadow-lg shadow-emerald-500/20 scale-[1.02]"
+                  : "text-[#a8a8a8] hover:text-white hover:bg-white/5"
               }`}
             >
               <span>✂️</span> FASE 1 Corte
             </button>
             <button
               onClick={() => setActiveTab("estilo")}
-              className={`flex items-center gap-2 rounded-xl px-5 py-2 text-xs font-bold transition-all font-jakarta ${
+              className={`flex items-center gap-2 rounded-full px-5 py-1.5 text-xs font-semibold transition-all ${
                 activeTab === "estilo"
-                  ? "bg-gradient-to-r from-cyan-400 to-emerald-400 text-slate-950 shadow-lg shadow-cyan-500/20 scale-[1.02]"
-                  : "text-slate-400 hover:text-white hover:bg-white/5"
+                  ? "bg-brand-gradient text-[#0a0a0a] shadow-lg shadow-emerald-500/20 scale-[1.02]"
+                  : "text-[#a8a8a8] hover:text-white hover:bg-white/5"
               }`}
             >
               <span>🎨</span> Estilo
             </button>
             <button
               onClick={() => setActiveTab("visual")}
-              className={`flex items-center gap-2 rounded-xl px-5 py-2 text-xs font-bold transition-all font-jakarta ${
+              className={`flex items-center gap-2 rounded-full px-5 py-1.5 text-xs font-semibold transition-all ${
                 activeTab === "visual"
-                  ? "bg-gradient-to-r from-cyan-400 to-emerald-400 text-slate-950 shadow-lg shadow-cyan-500/20 scale-[1.02]"
-                  : "text-slate-400 hover:text-white hover:bg-white/5"
+                  ? "bg-brand-gradient text-[#0a0a0a] shadow-lg shadow-emerald-500/20 scale-[1.02]"
+                  : "text-[#a8a8a8] hover:text-white hover:bg-white/5"
               }`}
             >
               <span>🎬</span> FASE 2 Visual / Exportar
@@ -602,16 +602,16 @@ export default function EditorPage({
           </div>
         )}
         {!isCleanReady && job.status !== "error" && (
-          <div className="mb-6 rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-4 text-sm text-cyan-100 font-geist">
+          <div className="mb-6 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-100">
             <div className="mb-2 flex items-center gap-2 font-bold">
-              <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-cyan-300" />
+              <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-400" />
               {STATUS_LABEL[job.status] || "Processando"} — {job.progress || 0}%
             </div>
-            <div className="progress-track max-w-xl">
-              <div className="progress-fill" style={{ width: `${job.progress || 0}%` }} />
+            <div className="h-2 w-full max-w-xl overflow-hidden rounded-full bg-black/40 border border-[#262626]">
+              <div className="h-full bg-brand-gradient transition-all duration-300" style={{ width: `${job.progress || 0}%` }} />
             </div>
-            <p className="mt-2 text-xs text-cyan-200/70">
-              O vídeo editado aparecerá automaticamente aqui assim que o processamento terminar.
+            <p className="mt-2 text-xs text-emerald-200/80">
+              O vídeo editado aparecerá automaticamente assim que a inteligência concluir o corte.
             </p>
           </div>
         )}
@@ -622,20 +622,18 @@ export default function EditorPage({
             {activeTab === "corte" && (
               <div className="space-y-6 animate-in">
                 {/* Control Bar: Timecode, Play, Zoom, Fit */}
-                <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-white/10 bg-[#0E121E] p-4 shadow-xl">
+                <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[#262626] bg-[#171717] p-4 shadow-xl">
                   <div className="flex items-center gap-3">
                     <button
                       onClick={togglePlayPause}
-                      className="flex h-11 w-11 items-center justify-center rounded-xl bg-cyan-400 font-bold text-slate-950 shadow-lg shadow-cyan-500/20 transition hover:scale-105 active:scale-95"
+                      className="shiny-cta h-10 w-10 text-base font-bold text-white shadow-lg"
                     >
-                      {isPlaying ? "⏸" : "▶"}
+                      <span className="shiny-dots" aria-hidden="true" />
+                      <span className="shiny-cta-content">{isPlaying ? "⏸" : "▶"}</span>
                     </button>
-                    <div className="rounded-xl border border-white/10 bg-black/50 px-4 py-2 text-sm font-mono font-bold text-cyan-300">
-                      {formatTimeExact(currentTime)} / {formatTimeExact(totalDuration)}
+                    <div className="font-mono text-xs text-[#fafafa] font-semibold bg-[#0a0a0a] px-3 py-1.5 rounded-lg border border-[#262626]">
+                      {formatTime(currentTime)} / {formatTime(totalDuration)}
                     </div>
-                    <span className="rounded-lg bg-cyan-400/10 border border-cyan-400/30 px-2.5 py-1 text-xs font-bold text-cyan-300">
-                      📌 IN
-                    </span>
                   </div>
 
                   <div className="flex items-center gap-4">
@@ -1252,19 +1250,22 @@ export default function EditorPage({
                     </div>
                   </div>
 
-                  <button onClick={handleRender} disabled={!isCleanReady || isRendering} className="btn-primary btn-pill w-full py-4 text-base font-black">
-                    {isRendering ? "🎬 Renderizando Vídeo Final..." : "🚀 Exportar Vídeo Final"}
+                  <button onClick={handleRender} disabled={!isCleanReady || isRendering} className="shiny-cta w-full py-4 text-base font-bold">
+                    <span className="shiny-dots" aria-hidden="true" />
+                    <span className="shiny-cta-content text-white">
+                      {isRendering ? "🎬 Renderizando Vídeo Final..." : "🚀 Exportar Vídeo Final"}
+                    </span>
                   </button>
 
-                  {renderError && <p className="text-xs text-rose-400 font-geist">⚠️ {renderError}</p>}
+                  {renderError && <p className="text-xs text-rose-400">⚠️ {renderError}</p>}
 
                   {job.final_video_url && (
                     <a
                       href={getVideoUrl(job.final_video_url)}
                       download
-                      className="flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-400 py-3.5 text-sm font-black text-slate-950 shadow-xl transition hover:bg-emerald-300 font-jakarta"
+                      className="flex w-full items-center justify-center gap-2 rounded-full bg-brand-gradient py-3.5 text-sm font-bold text-[#0a0a0a] shadow-xl transition hover:opacity-90"
                     >
-                      ⬇️ Baixar Vídeo Final (1080x1920)
+                      ⬇️ Baixar Vídeo Final (Alta Conversão)
                     </a>
                   )}
                 </div>
