@@ -173,7 +173,12 @@ export default function EditorPage({
   const activeSub = activeSubIndex !== -1 ? localTranscript[activeSubIndex] : null;
 
   // Multi-File Split Carousel
-  const splitUrls = job?.split_images_urls || (job?.split_image_url ? [job.split_image_url] : []);
+  const splitUrls =
+    style.split_screen_images && style.split_screen_images.length > 0
+      ? style.split_screen_images
+      : style.split_screen_image
+      ? [style.split_screen_image]
+      : job?.split_images_urls || (job?.split_image_url ? [job.split_image_url] : []);
   const currentSplitIdx = splitUrls.length > 0 ? Math.floor(currentTime / 4) % splitUrls.length : 0;
   const activeSplitUrl = splitUrls.length > 0 ? splitUrls[currentSplitIdx] : null;
 
@@ -358,53 +363,78 @@ export default function EditorPage({
     updateStyleAndPersist((s) => ({ ...s, subtitle_theme: theme, ...presets[theme] }));
   };
 
-  // STRICT 1 OR 2 LINE FORMATTING — groups words into lines respecting maxChars/maxLines
-  const wrapWordsIntoLines = (words: string[], maxChars: number, maxLines: number): string[][] => {
-    const lines: string[][] = [];
-    let currentLine: string[] = [];
+  // STRICT LINE WRAPPING — Groups words into lines based on maxChars, then window-selects
+  // 1 or 2 lines containing the currently spoken word.
+  const getDisplayLines = (sub: TranscriptSegment, maxChars: number, maxLines: number) => {
+    const isUpper = ["andromeda", "million"].includes(style.subtitle_theme);
+    const words = (sub.words && sub.words.length > 0 ? sub.words : []).map(w => ({
+      ...w,
+      word: isUpper ? w.word.toUpperCase() : w.word,
+    }));
+
+    if (words.length === 0) {
+      const rawText = isUpper ? sub.text.toUpperCase() : sub.text;
+      const rawWords = rawText.split(/\s+/).filter(Boolean);
+      const lines: string[][] = [];
+      let currentLine: string[] = [];
+      let currentLen = 0;
+      for (const w of rawWords) {
+        if (currentLen + (currentLine.length > 0 ? 1 : 0) + w.length <= maxChars || currentLine.length === 0) {
+          currentLine.push(w);
+          currentLen += (currentLine.length > 1 ? 1 : 0) + w.length;
+        } else {
+          lines.push(currentLine);
+          currentLine = [w];
+          currentLen = w.length;
+        }
+      }
+      if (currentLine.length > 0) lines.push(currentLine);
+      return maxLines === 1 ? [lines[0] || []] : lines.slice(0, 2);
+    }
+
+    // Group words into lines of at most maxChars
+    const linesOfWords: (typeof words)[] = [];
+    let currentLine: typeof words = [];
     let currentLen = 0;
 
     for (const w of words) {
-      const newLen = currentLen + (currentLine.length > 0 ? 1 : 0) + w.length;
+      const newLen = currentLen + (currentLine.length > 0 ? 1 : 0) + w.word.length;
       if (newLen <= maxChars || currentLine.length === 0) {
         currentLine.push(w);
         currentLen = newLen;
       } else {
-        lines.push(currentLine);
+        linesOfWords.push(currentLine);
         currentLine = [w];
-        currentLen = w.length;
+        currentLen = w.word.length;
       }
     }
-    if (currentLine.length > 0) lines.push(currentLine);
+    if (currentLine.length > 0) linesOfWords.push(currentLine);
 
-    // Clamp to maxLines
+    // Find which line index contains the currently active word
+    let activeLineIdx = 0;
+    for (let lIdx = 0; lIdx < linesOfWords.length; lIdx++) {
+      const lineWords = linesOfWords[lIdx];
+      if (lineWords.some(w => currentTime >= w.start && currentTime <= w.end)) {
+        activeLineIdx = lIdx;
+        break;
+      }
+    }
+
     if (maxLines === 1) {
-      return [words]; // single line with all words
-    } else if (maxLines === 2 && lines.length > 2) {
-      return [lines[0], lines.slice(1).flat()];
+      // STRICT 1 LINE: Return ONLY the line corresponding to current active word
+      return [linesOfWords[activeLineIdx] || linesOfWords[0] || []];
+    } else {
+      // STRICT 2 LINES: Return the pair of lines containing active word
+      const startLineIdx = Math.floor(activeLineIdx / 2) * 2;
+      return linesOfWords.slice(startLineIdx, startLineIdx + 2);
     }
-    return lines;
   };
 
-  const formatSubText = (rawText: string) => {
-    const isUpper = ["andromeda", "million"].includes(style.subtitle_theme);
-    const text = isUpper ? rawText.toUpperCase() : rawText;
-    const maxChars = style.subtitle_max_chars_per_line || 25;
-    const maxLines = style.subtitle_max_lines || 1;
-    const words = text.split(/\s+/).filter(Boolean);
-    const lines = wrapWordsIntoLines(words, maxChars, maxLines);
-    return lines.map(l => l.join(" ")).join("\n");
-  };
-
-  // Render Subtitle Content in Preview — respects maxLines even with animation
+  // Render Subtitle Content in Preview — 100% strict 1 or 2 line display
   const renderPreviewSubContent = (sub: TranscriptSegment) => {
-    if (!style.subtitle_animated || !sub.words || sub.words.length === 0) {
-      return formatSubText(sub.text);
-    }
-
-    const isUpper = ["andromeda", "million"].includes(style.subtitle_theme);
     const maxChars = style.subtitle_max_chars_per_line || 25;
     const maxLines = style.subtitle_max_lines || 1;
+    const isAnimated = style.subtitle_animated && sub.words && sub.words.length > 0;
     const animStyle = style.subtitle_animation_style || "bounce_yellow";
 
     const activeColorClass =
@@ -414,36 +444,43 @@ export default function EditorPage({
         ? "text-emerald-300 drop-shadow-[0_2px_10px_rgba(52,211,153,0.9)] scale-110 font-black"
         : "text-yellow-300 drop-shadow-[0_2px_10px_rgba(250,204,21,0.9)] scale-110 font-black";
 
-    // Group words into lines respecting maxChars and maxLines
-    const wordTexts = sub.words.map(w => isUpper ? w.word.toUpperCase() : w.word);
-    const lines = wrapWordsIntoLines(wordTexts, maxChars, maxLines);
-
-    // Build a flat index map so we can match sub.words[i] -> which line it belongs to
-    let wordIdx = 0;
+    const displayLines = getDisplayLines(sub, maxChars, maxLines);
     const spacingPx = style.subtitle_letter_spacing || 0;
 
-    return lines.map((lineWords, lineIdx) => (
-      <span key={`line-${lineIdx}`} className="block leading-snug">
-        {lineWords.map((wordTxt) => {
-          const wObj = sub.words[wordIdx];
-          const isWordActive = wObj ? currentTime >= wObj.start && currentTime <= wObj.end : false;
-          wordIdx++;
-          return (
-            <span
-              key={wordIdx}
-              className={`inline-block transition-all duration-150 ${
-                isWordActive ? activeColorClass : "opacity-80"
-              }`}
-              style={{
-                marginRight: `calc(0.3em + ${spacingPx * 0.4}px)`
-              }}
-            >
-              {wordTxt}
-            </span>
-          );
-        })}
-      </span>
-    ));
+    return displayLines.map((lineWords, lineIdx) => {
+      const lineText = typeof lineWords[0] === "string"
+        ? (lineWords as string[]).join(" ")
+        : (lineWords as { word: string }[]).map(w => w.word).join(" ");
+
+      if (!isAnimated) {
+        return (
+          <span key={`line-${lineIdx}`} className="block leading-snug">
+            {lineText}
+          </span>
+        );
+      }
+
+      return (
+        <span key={`line-${lineIdx}`} className="block leading-snug">
+          {(lineWords as { word: string; start: number; end: number }[]).map((wObj, wIdx) => {
+            const isWordActive = currentTime >= wObj.start && currentTime <= wObj.end;
+            return (
+              <span
+                key={wIdx}
+                className={`inline-block transition-all duration-150 ${
+                  isWordActive ? activeColorClass : "opacity-80"
+                }`}
+                style={{
+                  marginRight: `calc(0.3em + ${spacingPx * 0.4}px)`
+                }}
+              >
+                {wObj.word}
+              </span>
+            );
+          })}
+        </span>
+      );
+    });
   };
 
   if (error) {
@@ -477,8 +514,8 @@ export default function EditorPage({
   const totalDuration = job.clean_duration || job.original_duration || 1;
   const currentVideoPath = job.clean_video_url || job.final_video_url || "";
 
-  const cg = style.color_grade;
-  const cssGradeFilter = `contrast(${Math.round(cg.contrast * 100)}%) saturate(${Math.round(cg.saturation * 100)}%) brightness(${Math.round(cg.brightness * 100)}%)`;
+  const cg = style.color_grade || DEFAULT_STYLE_OPTIONS.color_grade;
+  const cssGradeFilter = `contrast(${Math.round((cg.contrast ?? 1.0) * 100)}%) saturate(${Math.round((cg.saturation ?? 1.0) * 100)}%) brightness(${Math.round((cg.brightness ?? 1.0) * 100)}%) sepia(${Math.max(0, Math.round((cg.warmth ?? 0) * 50))}%)`;
   const framingYPercent = style.split_screen_framing_y ?? 50.0;
 
   const segmentBadges = ["HOOK", "DINÂMICA", "RECURSOS", "CONTEÚDO", "CTA"];
@@ -563,9 +600,9 @@ export default function EditorPage({
             </p>
           </div>
         )}
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-8 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-8 items-start w-full min-w-0">
           {/* ═══════════ LEFT COLUMN (PAINEL DA FASE ATIVA) ═══════════ */}
-          <div className="space-y-6">
+          <div className="space-y-6 min-w-0 w-full">
             {/* ✂️ FASE 1 — CORTE TAB */}
             {activeTab === "corte" && (
               <div className="space-y-6 animate-in">
@@ -608,13 +645,13 @@ export default function EditorPage({
                 </div>
 
                 {/* TIMELINE PRO COM RULER, CUT BLOCKS E WAVEFORM AUDIO */}
-                <div className="rounded-2xl border border-white/10 bg-[#0E121E] p-6 shadow-2xl overflow-hidden">
+                <div className="rounded-2xl border border-white/10 bg-[#0E121E] p-6 shadow-2xl overflow-hidden min-w-0 w-full">
                   <div className="mb-3 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-400">
                     <span>🎞️ Linha do Tempo & Cortes Inteligentes</span>
                     <span className="text-cyan-400 font-mono">{formatDuration(totalDuration)} total</span>
                   </div>
 
-                  <div className="relative w-full overflow-x-auto select-none py-2">
+                  <div className="relative w-full overflow-x-auto select-none py-2 min-w-0">
                     <div className="min-w-[700px] relative">
                       {/* Ruler Bar */}
                       <div className="flex h-6 w-full items-end justify-between border-b border-white/10 pb-1 text-[10px] font-mono text-slate-500">
@@ -801,31 +838,8 @@ export default function EditorPage({
                 {/* 2. COR DE DESTAQUE */}
                 <div className="space-y-3">
                   <label className="text-xs font-black uppercase tracking-wider text-cyan-400 font-geist">COR DE DESTAQUE</label>
-                  <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-white/10 bg-[#0E121E] p-4">
-                    {[
-                      { hex: "#22D3EE", name: "Ciano Editu" },
-                      { hex: "#34D399", name: "Verde Esmeralda" },
-                      { hex: "#FACC15", name: "Amarelo Ouro" },
-                      { hex: "#FF5200", name: "Laranja Pop" },
-                      { hex: "#EC4899", name: "Rosa Neon" },
-                    ].map((c) => (
-                      <button
-                        key={c.hex}
-                        onClick={() => {
-                          setHighlightColor(c.hex);
-                          updateStyleAndPersist((s) => ({ ...s, subtitle_color: c.hex }));
-                        }}
-                        className={`flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-bold transition font-geist ${
-                          highlightColor === c.hex
-                            ? "border-white bg-white/10 text-white"
-                            : "border-white/10 bg-black/40 text-slate-400 hover:text-white"
-                        }`}
-                      >
-                        <span className="h-4 w-4 rounded-full shadow" style={{ backgroundColor: c.hex }} />
-                        <span>{c.name}</span>
-                      </button>
-                    ))}
-                    <div className="flex items-center gap-2 border-l border-white/10 pl-3">
+                  <div className="flex items-center gap-4 rounded-2xl border border-white/10 bg-[#0E121E] p-4">
+                    <div className="flex items-center gap-3">
                       <input
                         type="color"
                         value={highlightColor}
@@ -833,9 +847,12 @@ export default function EditorPage({
                           setHighlightColor(e.target.value);
                           updateStyleAndPersist((s) => ({ ...s, subtitle_color: e.target.value }));
                         }}
-                        className="h-8 w-8 cursor-pointer rounded-lg border-0 bg-transparent"
+                        className="h-10 w-10 cursor-pointer rounded-xl border border-white/20 bg-transparent p-0.5"
                       />
-                      <span className="font-mono text-xs text-cyan-300 uppercase font-geist">{highlightColor}</span>
+                      <div>
+                        <span className="block text-[11px] font-medium text-slate-400 font-geist">Seletor Geral de Cor:</span>
+                        <span className="font-mono text-sm font-bold text-cyan-300 uppercase font-geist">{highlightColor}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -851,13 +868,8 @@ export default function EditorPage({
                       onChange={(e) => setHeadlineText(e.target.value)}
                       className="w-full rounded-xl border border-white/10 bg-black/50 px-4 py-3 text-sm text-white focus:border-cyan-400 focus:outline-none font-geist"
                     />
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="rounded-xl border border-cyan-400 bg-cyan-400/10 p-3 text-center font-jakarta font-black text-white text-xs uppercase tracking-wide">
-                        {headlineText || "É ASSIM QUE VAI FICAR A SUA HEADLINE"}
-                      </div>
-                      <div className="rounded-xl border border-white/10 bg-black/60 p-3 text-center font-jakarta font-black text-cyan-300 text-xs uppercase tracking-wide">
-                        {headlineText || "É ASSIM QUE VAI FICAR A SUA HEADLINE"}
-                      </div>
+                    <div className="p-3 text-center font-jakarta text-sm font-black text-white uppercase tracking-wider drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)]">
+                      {headlineText || "É ASSIM QUE VAI FICAR A SUA HEADLINE"}
                     </div>
                   </div>
                 </div>
@@ -947,15 +959,18 @@ export default function EditorPage({
                     <span className="block text-xs font-medium text-slate-400 mb-1.5 font-geist">Fonte da Legenda:</span>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       {[
-                        { name: "Inter", label: "Inter (Padrão)" },
+                        { name: "The Bold Font", label: "The Bold Font (Anton)" },
                         { name: "Montserrat", label: "Montserrat" },
                         { name: "Bebas Neue", label: "Bebas Neue" },
                         { name: "Impact", label: "Impact" },
+                        { name: "Poppins", label: "Poppins" },
+                        { name: "Luckiest Guy", label: "Luckiest Guy" },
+                        { name: "Inter", label: "Inter" },
                       ].map((f) => (
                         <button
                           key={f.name}
                           onClick={() => updateStyleAndPersist((s) => ({ ...s, subtitle_font: f.name as any }))}
-                          className={`rounded-xl border py-2 text-xs font-bold transition font-geist ${
+                          className={`rounded-xl border py-2 px-3 text-xs font-bold transition font-geist ${
                             style.subtitle_font === f.name
                               ? "border-cyan-400 bg-cyan-400/20 text-cyan-300"
                               : "border-white/10 bg-black/40 text-slate-400 hover:text-white"
@@ -1028,6 +1043,129 @@ export default function EditorPage({
                         max="12"
                         value={style.subtitle_letter_spacing || 0}
                         onChange={(e) => updateStyleAndPersist((s) => ({ ...s, subtitle_letter_spacing: parseInt(e.target.value) }))}
+                        className="w-full accent-cyan-400 cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 7. PAINEL PROFISSIONAL DE COLOR GRADING */}
+                <div className="rounded-2xl border border-white/10 bg-[#0E121E] p-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-black uppercase tracking-wider text-cyan-400 font-geist">🎨 COLOR GRADING & TRATAMENTO DE IMAGEM</label>
+                    <div className="flex gap-2">
+                      {[
+                        { label: "Vívido", grade: { contrast: 1.25, saturation: 1.35, brightness: 1.05, warmth: 0.0 } },
+                        { label: "Cinema", grade: { contrast: 1.3, saturation: 0.9, brightness: 1.0, warmth: 0.15 } },
+                        { label: "P&B", grade: { contrast: 1.3, saturation: 0.0, brightness: 1.0, warmth: 0.0 } },
+                        { label: "Natural", grade: { contrast: 1.0, saturation: 1.0, brightness: 1.0, warmth: 0.0 } },
+                      ].map((preset) => (
+                        <button
+                          key={preset.label}
+                          onClick={() => {
+                            Object.entries(preset.grade).forEach(([k, v]) => handleGradeChange(k as any, v));
+                          }}
+                          className="rounded-lg border border-white/10 bg-black/40 px-2.5 py-1 text-[11px] font-bold text-slate-300 hover:text-cyan-300 font-geist"
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-1">
+                    <div>
+                      <div className="flex justify-between text-xs text-slate-400 mb-1 font-geist">
+                        <span>Contraste:</span>
+                        <span className="font-mono text-cyan-300 font-bold">{Math.round((style.color_grade?.contrast ?? 1.0) * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.5"
+                        max="2.0"
+                        step="0.05"
+                        value={style.color_grade?.contrast ?? 1.0}
+                        onChange={(e) => handleGradeChange("contrast", parseFloat(e.target.value))}
+                        className="w-full accent-cyan-400 cursor-pointer"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between text-xs text-slate-400 mb-1 font-geist">
+                        <span>Saturação:</span>
+                        <span className="font-mono text-cyan-300 font-bold">{Math.round((style.color_grade?.saturation ?? 1.0) * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.0"
+                        max="2.5"
+                        step="0.05"
+                        value={style.color_grade?.saturation ?? 1.0}
+                        onChange={(e) => handleGradeChange("saturation", parseFloat(e.target.value))}
+                        className="w-full accent-cyan-400 cursor-pointer"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between text-xs text-slate-400 mb-1 font-geist">
+                        <span>Brilho:</span>
+                        <span className="font-mono text-cyan-300 font-bold">{Math.round((style.color_grade?.brightness ?? 1.0) * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.5"
+                        max="1.5"
+                        step="0.05"
+                        value={style.color_grade?.brightness ?? 1.0}
+                        onChange={(e) => handleGradeChange("brightness", parseFloat(e.target.value))}
+                        className="w-full accent-cyan-400 cursor-pointer"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between text-xs text-slate-400 mb-1 font-geist">
+                        <span>Temperatura (Warmth):</span>
+                        <span className="font-mono text-cyan-300 font-bold">{Math.round((style.color_grade?.warmth ?? 0.0) * 100)}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="-0.5"
+                        max="0.5"
+                        step="0.05"
+                        value={style.color_grade?.warmth ?? 0.0}
+                        onChange={(e) => handleGradeChange("warmth", parseFloat(e.target.value))}
+                        className="w-full accent-cyan-400 cursor-pointer"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between text-xs text-slate-400 mb-1 font-geist">
+                        <span>Intensidade Geral:</span>
+                        <span className="font-mono text-cyan-300 font-bold">{Math.round((style.color_grade?.intensity ?? 1.0) * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.0"
+                        max="2.0"
+                        step="0.05"
+                        value={style.color_grade?.intensity ?? 1.0}
+                        onChange={(e) => handleGradeChange("intensity", parseFloat(e.target.value))}
+                        className="w-full accent-cyan-400 cursor-pointer"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between text-xs text-slate-400 mb-1 font-geist">
+                        <span>Nitidez (Sharpness):</span>
+                        <span className="font-mono text-cyan-300 font-bold">{Math.round((style.color_grade?.sharpness ?? 0.0) * 100)}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.0"
+                        max="2.0"
+                        step="0.05"
+                        value={style.color_grade?.sharpness ?? 0.0}
+                        onChange={(e) => handleGradeChange("sharpness", parseFloat(e.target.value))}
                         className="w-full accent-cyan-400 cursor-pointer"
                       />
                     </div>
@@ -1107,7 +1245,7 @@ export default function EditorPage({
               >
                 {/* Headline Overlay Option */}
                 {headlineText && (
-                  <div className="absolute top-4 left-4 right-4 z-30 rounded-xl bg-black/80 p-2 text-center font-jakarta text-[10px] font-black text-white uppercase tracking-wider border border-cyan-400/40 shadow-lg">
+                  <div className="absolute top-4 left-3 right-3 z-30 text-center font-jakarta text-xs sm:text-sm font-black text-white uppercase tracking-wider drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)]">
                     {headlineText}
                   </div>
                 )}
@@ -1216,9 +1354,12 @@ export default function EditorPage({
                         backgroundColor: style.subtitle_bg_color !== "transparent" && style.subtitle_bg_color !== "none" && style.subtitle_bg_color !== "" ? style.subtitle_bg_color : "transparent",
                         letterSpacing: `${style.subtitle_letter_spacing || 0}px`,
                         fontFamily:
-                          style.subtitle_font === "Bebas Neue" ? "'Bebas Neue', sans-serif"
+                          style.subtitle_font === "The Bold Font" ? "'Anton', 'Bebas Neue', sans-serif"
+                          : style.subtitle_font === "Bebas Neue" ? "'Bebas Neue', sans-serif"
                           : style.subtitle_font === "Montserrat" ? "'Montserrat', sans-serif"
                           : style.subtitle_font === "Impact" ? "Impact, sans-serif"
+                          : style.subtitle_font === "Poppins" ? "'Poppins', sans-serif"
+                          : style.subtitle_font === "Luckiest Guy" ? "'Luckiest Guy', cursive"
                           : "'Inter', sans-serif",
                         WebkitTextStroke: style.subtitle_outline_enabled ? `1.2px ${style.subtitle_outline_color}` : "none",
                         filter: style.subtitle_shadow_enabled ? "drop-shadow(0 3px 6px rgba(0,0,0,0.95))" : "none",

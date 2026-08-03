@@ -16,7 +16,7 @@ export type SubtitleStyle = "none" | "basic";
 
 export type SubtitlePosition = "bottom" | "middle" | "top" | "custom";
 
-export type SubtitleFont = "Inter" | "Montserrat" | "Bebas Neue" | "Impact";
+export type SubtitleFont = "Inter" | "Montserrat" | "Bebas Neue" | "Impact" | "The Bold Font" | "Poppins" | "Luckiest Guy";
 
 export type SubtitleTheme =
   | "andromeda"
