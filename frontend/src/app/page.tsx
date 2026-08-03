@@ -80,11 +80,11 @@ export default function HomePage() {
 
           {/* Headline */}
           <div className="animate-in text-center">
-            <h1 className="mx-auto max-w-5xl text-4xl font-semibold leading-[1.25] tracking-tighter text-[#fafafa] sm:text-5xl lg:text-7xl font-sans">
+            <h1 className="mx-auto max-w-5xl text-4xl font-semibold leading-[1.2] tracking-tighter text-[#fafafa] sm:text-5xl lg:text-7xl font-sans">
               Edição de vídeo com{" "}
-              <span className="shiny-cta inline-flex items-center px-4 py-1.5 mx-1 my-1 text-white font-extrabold align-middle shadow-2xl">
-                <span className="shiny-dots" aria-hidden="true" />
-                <span className="shiny-cta-content hover-text-shine">alta conversão automática</span>
+              <span className="relative inline-block hover-text-shine cursor-default font-extrabold pb-2 mx-1">
+                alta conversão automática
+                <span className="animate-sweep-underline" aria-hidden="true" />
               </span>
               .
             </h1>

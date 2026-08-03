@@ -357,8 +357,29 @@
   animation: slideUp 0.6s ease-out both;
 }
 
-.animate-pulse-glow {
-  animation: pulseGlow 2s ease-in-out infinite;
+@keyframes sweepUnderline {
+  0% {
+    left: 0%;
+    width: 35%;
+  }
+  50% {
+    left: 65%;
+    width: 35%;
+  }
+  100% {
+    left: 0%;
+    width: 35%;
+  }
+}
+
+.animate-sweep-underline {
+  position: absolute;
+  bottom: -4px;
+  height: 3px;
+  border-radius: 9999px;
+  background: linear-gradient(to right, #10b981, #34d399, #6ee7b7);
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.9);
+  animation: sweepUnderline 2.4s ease-in-out infinite;
 }
 
 /* Glass Card */
