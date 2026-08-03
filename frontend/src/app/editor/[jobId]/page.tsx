@@ -190,9 +190,12 @@ export default function EditorPage({
     activeSplitUrl.endsWith(".avi")
   );
 
-  // Dynamic Zoom Scale
-  const isSegmentZoomed = style.zoom_enabled && activeSubIndex !== -1 && Math.floor(activeSubIndex / 3) % 2 === 1;
-  const currentZoomScale = isSegmentZoomed ? 1.15 : 1.0;
+  // Dynamic Zoom Scale — Alternates punch zoom on EVERY cut segment change!
+  const enabledCuts = localCuts.filter((c) => c.enabled);
+  const activeCutIdx = enabledCuts.findIndex((c) => currentTime >= c.start && currentTime <= c.end);
+  const zoomIndex = activeCutIdx !== -1 ? activeCutIdx : activeSubIndex;
+  const isSegmentZoomed = style.zoom_enabled && zoomIndex !== -1 && zoomIndex % 2 === 1;
+  const currentZoomScale = isSegmentZoomed ? 1.18 : 1.0;
 
   // Subtitle Drag & Drop
   const handleSubMouseDown = (e: React.MouseEvent) => {
@@ -640,7 +643,7 @@ export default function EditorPage({
 
                   <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-slate-400 font-medium">Zoom</span>
+                      <span className="text-xs text-[#a8a8a8] font-medium">Zoom</span>
                       <input
                         type="range"
                         min="50"
@@ -652,7 +655,7 @@ export default function EditorPage({
                     </div>
                     <button
                       onClick={() => setZoomLevel(100)}
-                      className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-300 transition hover:bg-white/10"
+                      className="rounded-xl border border-[#262626] bg-[#171717] px-3 py-1.5 text-xs font-semibold text-[#a8a8a8] transition hover:bg-[#262626] hover:text-white"
                     >
                       Fit
                     </button>
@@ -660,8 +663,8 @@ export default function EditorPage({
                 </div>
 
                 {/* TIMELINE PRO COM RULER, CUT BLOCKS E WAVEFORM AUDIO */}
-                <div className="rounded-2xl border border-white/10 bg-[#0E121E] p-6 shadow-2xl overflow-hidden min-w-0 w-full">
-                  <div className="mb-3 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-400">
+                <div className="rounded-2xl border border-[#262626] bg-[#171717] p-6 shadow-2xl overflow-hidden min-w-0 w-full">
+                  <div className="mb-3 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-[#a8a8a8]">
                     <span>🎞️ Linha do Tempo & Cortes Inteligentes</span>
                     <span className="text-emerald-400 font-mono">{formatDuration(totalDuration)} total</span>
                   </div>
@@ -669,14 +672,14 @@ export default function EditorPage({
                   <div className="relative w-full overflow-x-auto select-none py-2 min-w-0">
                     <div className="min-w-[700px] relative">
                       {/* Ruler Bar */}
-                      <div className="flex h-6 w-full items-end justify-between border-b border-white/10 pb-1 text-[10px] font-mono text-slate-500">
+                      <div className="flex h-6 w-full items-end justify-between border-b border-[#262626] pb-1 text-[10px] font-mono text-[#737373]">
                         {Array.from({ length: 9 }).map((_, i) => (
                           <span key={i}>{((totalDuration / 8) * i).toFixed(2)}s</span>
                         ))}
                       </div>
 
                       {/* Video Cut Blocks Track */}
-                      <div className="relative mt-3 h-20 w-full rounded-xl bg-black/60 border border-white/10 overflow-hidden flex gap-1 p-1">
+                      <div className="relative mt-3 h-20 w-full rounded-xl bg-[#0a0a0a] border border-[#262626] overflow-hidden flex gap-1 p-1">
                         {localCuts.map((cut, i) => {
                           const widthPct = Math.max(((cut.end - cut.start) / totalDuration) * 100, 1);
                           const badgeLabel = segmentBadges[i % segmentBadges.length];
@@ -736,7 +739,7 @@ export default function EditorPage({
                   </div>
 
                   {/* Banner */}
-                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white/[0.03] p-3 border border-white/5 text-xs text-slate-400">
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[#0a0a0a] p-3 border border-[#262626] text-xs text-[#a8a8a8]">
                     <span>💡 Clique em qualquer bloco de vídeo para ativar ou desativar o corte automático.</span>
                     <button onClick={() => setActiveTab("estilo")} className="btn-primary btn-pill text-xs font-bold">
                       Aprovar Corte & Ir para Estilo →
@@ -749,8 +752,8 @@ export default function EditorPage({
                   <div className="glass-panel p-6">
                     <div className="mb-4 flex items-center justify-between">
                       <div>
-                        <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 font-geist">📝 Transcrição Inteligente</p>
-                        <p className="mt-0.5 text-[10px] text-slate-500 font-geist">Edite o texto das frases para ajustar o vídeo</p>
+                        <p className="text-xs font-semibold uppercase tracking-wider text-[#a8a8a8]">📝 Transcrição Inteligente</p>
+                        <p className="mt-0.5 text-[10px] text-[#737373]">Edite o texto das frases para ajustar o vídeo</p>
                       </div>
                       <div className="flex gap-2">
                         <button onClick={copyTranscriptText} className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20">
@@ -1434,7 +1437,7 @@ export default function EditorPage({
                 {style.layout === "split_screen" ? (
                   <div className="flex h-full w-full flex-col">
                     {/* Top Media */}
-                    <div className="relative h-1/2 w-full overflow-hidden bg-slate-900">
+                    <div className="relative h-1/2 w-full overflow-hidden bg-[#171717]">
                       {activeSplitUrl ? (
                         isTopMediaVideo ? (
                           <video
