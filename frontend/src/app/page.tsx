@@ -85,9 +85,9 @@ export default function HomePage() {
           {/* Pure Headline (NO Card Container Behind It) */}
           <div className="animate-in text-center max-w-5xl mx-auto">
             <h1 className="mx-auto max-w-4xl text-5xl font-bold leading-[1.08] tracking-tight text-white sm:text-6xl lg:text-7xl font-sans">
-              Edição de vídeo com{" "}
+              Edição de vídeos de forma{" "}
               <span className="text-[#10b981] drop-shadow-[0_0_35px_rgba(16,185,129,0.75)] font-extrabold">
-                alta conversão automática
+                99% automática
               </span>
             </h1>
             <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-[#a1a1a1] sm:text-lg font-normal">
