@@ -14,6 +14,8 @@ import {
   uploadSplitImages,
   updateTranscript,
   triggerAutoBroll,
+  fetchBRollSuggestions,
+  actionBRollSuggestion,
 } from "@/lib/api";
 import {
   DEFAULT_STYLE_OPTIONS,
@@ -373,6 +375,40 @@ export default function EditorPage({
     setIsAutoBrolling(false);
   };
 
+  const [brollSuggestions, setBrollSuggestions] = useState<import("@/lib/types").BRollSuggestion[]>([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+
+  const handleFetchSuggestions = async () => {
+    setLoadingSuggestions(true);
+    try {
+      const suggs = await fetchBRollSuggestions(jobId);
+      setBrollSuggestions(suggs);
+    } catch (err) {
+      console.error(err);
+    }
+    setLoadingSuggestions(false);
+  };
+
+  const handleActionSuggestion = async (suggId: string, mediaUrl: string, action: "accept" | "reject") => {
+    try {
+      await actionBRollSuggestion(jobId, suggId, mediaUrl, action);
+      setBrollSuggestions((prev) =>
+        prev.map((s) => (s.id === suggId ? { ...s, accepted_url: action === "accept" ? mediaUrl : null, status: action === "accept" ? "accepted" : "rejected" } : s))
+      );
+      if (action === "accept") {
+        updateStyleAndPersist((s) => ({
+          ...s,
+          layout: "split_screen",
+          split_screen_image: mediaUrl,
+          split_screen_images: [mediaUrl],
+        }));
+        refetch();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const applyPresetTheme = (theme: SubtitleTheme) => {
     const presets: Record<SubtitleTheme, Partial<StyleOptions>> = {
       andromeda: { subtitle_color: "#FFFFFF", subtitle_outline_color: "#000000", subtitle_bg_color: "#000000", subtitle_outline_enabled: false, subtitle_shadow_enabled: false },
@@ -539,6 +575,7 @@ export default function EditorPage({
   const cg = style.color_grade || DEFAULT_STYLE_OPTIONS.color_grade;
   const cssGradeFilter = `contrast(${Math.round((cg.contrast ?? 1.0) * 100)}%) saturate(${Math.round((cg.saturation ?? 1.0) * 100)}%) brightness(${Math.round((cg.brightness ?? 1.0) * 100)}%) sepia(${Math.max(0, Math.round((cg.warmth ?? 0) * 50))}%)`;
   const framingYPercent = style.split_screen_framing_y ?? 50.0;
+  const framingYBottomPercent = style.split_screen_framing_y_bottom ?? 50.0;
 
   const segmentBadges = ["HOOK", "DINÂMICA", "RECURSOS", "CONTEÚDO", "CTA"];
 
@@ -833,25 +870,93 @@ export default function EditorPage({
                   <input ref={splitInputRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={handleSplitImagesUpload} />
 
                   {style.layout === "split_screen" && (
-                    <div className="mt-3 rounded-2xl border border-[#262626] bg-[#171717] p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-                      <div className="flex-1 w-full">
-                        <div className="flex justify-between items-center mb-1 text-xs text-[#a8a8a8]">
-                          <span>↕️ Enquadramento Mídia Topo:</span>
-                          <span className="font-mono text-emerald-400 font-bold">{Math.round(framingYPercent)}%</span>
+                    <div className="mt-3 rounded-2xl border border-[#262626] bg-[#171717] p-4 space-y-4">
+                      {/* Sliders para enquadramento Y superior e inferior */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <div className="flex justify-between items-center mb-1 text-xs text-[#a8a8a8]">
+                            <span>↕️ Enquadramento Mídia Topo (Y):</span>
+                            <span className="font-mono text-emerald-400 font-bold">{Math.round(framingYPercent)}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={framingYPercent}
+                            onChange={(e) => updateStyleAndPersist((s) => ({ ...s, split_screen_framing_y: parseFloat(e.target.value) }))}
+                            className="w-full accent-emerald-400 cursor-pointer"
+                          />
                         </div>
-                        <input
-                          type="range"
-                          min="0"
-                          max="100"
-                          value={framingYPercent}
-                          onChange={(e) => updateStyleAndPersist((s) => ({ ...s, split_screen_framing_y: parseFloat(e.target.value) }))}
-                          className="w-full accent-emerald-400 cursor-pointer"
-                        />
+
+                        <div>
+                          <div className="flex justify-between items-center mb-1 text-xs text-[#a8a8a8]">
+                            <span>↕️ Enquadramento Mídia Base (Y):</span>
+                            <span className="font-mono text-emerald-400 font-bold">{Math.round(framingYBottomPercent)}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={framingYBottomPercent}
+                            onChange={(e) => updateStyleAndPersist((s) => ({ ...s, split_screen_framing_y_bottom: parseFloat(e.target.value) }))}
+                            className="w-full accent-emerald-400 cursor-pointer"
+                          />
+                        </div>
                       </div>
-                      <button onClick={handleAutoBroll} disabled={isAutoBrolling} className="shiny-cta px-4 py-2 text-xs font-bold whitespace-nowrap">
-                        <span className="shiny-dots" aria-hidden="true" />
-                        <span className="shiny-cta-content text-white">{isAutoBrolling ? "🤖 Buscando B-Roll..." : "🤖 Gerar Auto B-Roll IA"}</span>
-                      </button>
+
+                      {/* Painel Interativo de Sugestões de B-Roll da IA */}
+                      <div className="pt-3 border-t border-[#262626] space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">🎬 Sugestões de B-Roll IA</span>
+                            <p className="text-[10px] text-slate-400 font-geist">Escolha mídias temáticas para os momentos chave do vídeo</p>
+                          </div>
+                          <button onClick={handleFetchSuggestions} disabled={loadingSuggestions} className="shiny-cta px-3 py-1.5 text-xs font-bold whitespace-nowrap">
+                            <span className="shiny-cta-content text-white">{loadingSuggestions ? "🔄 Analisando..." : "🤖 Sugerir B-Rolls IA"}</span>
+                          </button>
+                        </div>
+
+                        {brollSuggestions.length > 0 && (
+                          <div className="space-y-3 pt-2">
+                            {brollSuggestions.map((sugg) => (
+                              <div key={sugg.id} className="rounded-xl border border-[#262626] bg-[#0a0a0a] p-3 space-y-2">
+                                <div className="flex items-center justify-between text-xs">
+                                  <span className="font-mono font-bold text-emerald-400">⏱️ {formatTime(sugg.start)} - {formatTime(sugg.end)}</span>
+                                  <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-md font-bold">{sugg.keyword}</span>
+                                </div>
+                                <p className="text-xs text-slate-300 italic bg-[#171717] p-2 rounded-lg border border-[#262626]">"{sugg.context_text}"</p>
+
+                                {/* Opções de Mídias */}
+                                <div className="grid grid-cols-3 gap-2 pt-1">
+                                  {sugg.options.map((opt, idx) => (
+                                    <div
+                                      key={idx}
+                                      onClick={() => handleActionSuggestion(sugg.id, opt.url, "accept")}
+                                      className={`group relative cursor-pointer overflow-hidden rounded-lg border transition-all ${
+                                        sugg.accepted_url === opt.url ? "border-emerald-400 ring-2 ring-emerald-500/40" : "border-[#262626] hover:border-emerald-500/50"
+                                      }`}
+                                    >
+                                      <img src={opt.thumbnail} alt={opt.title} className="h-16 w-full object-cover group-hover:scale-105 transition-transform" />
+                                      <div className="absolute inset-x-0 bottom-0 bg-black/80 p-1 text-[9px] font-bold text-white truncate text-center">
+                                        {opt.title}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+
+                                <div className="flex justify-end gap-2 pt-1">
+                                  <button
+                                    onClick={() => handleActionSuggestion(sugg.id, "", "reject")}
+                                    className="px-2.5 py-1 text-[11px] font-semibold text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 rounded-lg"
+                                  >
+                                    ❌ Ignorar
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1565,6 +1670,7 @@ export default function EditorPage({
                           style={{
                             filter: cssGradeFilter,
                             transform: `scale(${currentZoomScale})`,
+                            objectPosition: `center ${framingYBottomPercent}%`,
                           }}
                         />
                       ) : (

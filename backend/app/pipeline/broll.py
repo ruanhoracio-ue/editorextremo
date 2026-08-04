@@ -123,3 +123,55 @@ def _generate_fallback_broll(output_dir: Path, topic: str) -> str:
     except Exception:
         pass
     return str(target_file)
+
+
+def generate_broll_timeline_suggestions(
+    transcript: List[TranscriptSegment],
+    output_dir: Path,
+) -> List[dict]:
+    """
+    Scans transcript to suggest specific B-Roll moments with stock options for interactive approval.
+    """
+    if not transcript:
+        return []
+
+    suggestions = []
+    step = max(1, len(transcript) // 3)
+
+    unsplash_base = "https://images.unsplash.com/"
+    broll_photos = [
+        ("photo-1522071820081-009f0129c71c", "Reunião de Trabalho"),
+        ("photo-1460925895917-afdab827c52f", "Gráficos & Resultados"),
+        ("photo-1551836022-d5d88e9218df", "Tecnologia & Inovação"),
+        ("photo-1517245386807-bb43f82c33c4", "Apresentação Executiva"),
+    ]
+
+    for i in range(0, len(transcript), step):
+        if len(suggestions) >= 3:
+            break
+        seg = transcript[i]
+        text_clean = seg.text.strip()
+        words = [w for w in re.findall(r"\b[A-Za-zÀ-ÿ]{4,}\b", text_clean) if w.lower() not in STOPWORDS_PT]
+        topic = words[0] if words else "negocios"
+
+        options = []
+        for idx, (photo_id, title) in enumerate(broll_photos[:3]):
+            options.append({
+                "title": f"{title} ({topic.capitalize()})",
+                "url": f"{unsplash_base}{photo_id}?w=1080&q=80",
+                "thumbnail": f"{unsplash_base}{photo_id}?w=400&q=80",
+                "media_type": "image",
+            })
+
+        suggestions.append({
+            "id": f"broll_sugg_{len(suggestions)+1}",
+            "start": round(seg.start, 2),
+            "end": round(seg.end, 2),
+            "keyword": topic.capitalize(),
+            "context_text": text_clean,
+            "options": options,
+            "accepted_url": None,
+            "status": "pending",
+        })
+
+    return suggestions

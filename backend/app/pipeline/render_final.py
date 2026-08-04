@@ -90,13 +90,15 @@ def render_final_video(
             else:
                 input_args.extend(["-stream_loop", "-1", "-i", img_path])
 
-            framing_y = getattr(style_options, "split_screen_framing_y", 50.0)
+            framing_y_top = getattr(style_options, "split_screen_framing_y", 50.0)
+            framing_y_bot = getattr(style_options, "split_screen_framing_y_bottom", 50.0)
             half_h = canvas_h // 2
-            crop_y_expr = f"(in_h-{half_h})*{framing_y/100.0:.2f}"
+            crop_y_top = f"(in_h-{half_h})*{framing_y_top/100.0:.2f}"
+            crop_y_bot = f"(in_h-{half_h})*{framing_y_bot/100.0:.2f}"
 
             filters.append(
-                f"[1:v]scale={canvas_w}:-1,crop={canvas_w}:{half_h}:0:'{crop_y_expr}',setsar=1[top];"
-                f"[0:v]scale={canvas_w}:{half_h}:force_original_aspect_ratio=increase,crop={canvas_w}:{half_h},setsar=1[bot];"
+                f"[1:v]scale={canvas_w}:-1,crop={canvas_w}:{half_h}:0:'{crop_y_top}',setsar=1[top];"
+                f"[0:v]scale={canvas_w}:{half_h}:force_original_aspect_ratio=increase,crop={canvas_w}:{half_h}:0:'{crop_y_bot}',setsar=1[bot];"
                 f"[top][bot]vstack=inputs=2[base_canvas]"
             )
         else:

@@ -91,8 +91,27 @@ export interface StyleOptions {
   split_screen_image?: string;
   split_screen_images?: string[];
   split_screen_framing_y?: number;
+  split_screen_framing_y_bottom?: number;
   auto_broll_enabled?: boolean;
   aspect_ratio?: "9:16" | "4:5" | "1:1" | "16:9";
+}
+
+export interface BRollMediaOption {
+  title: string;
+  url: string;
+  thumbnail: string;
+  media_type: string;
+}
+
+export interface BRollSuggestion {
+  id: string;
+  start: number;
+  end: number;
+  keyword: string;
+  context_text: string;
+  options: BRollMediaOption[];
+  accepted_url?: string | null;
+  status: "pending" | "accepted" | "rejected";
 }
 
 export interface Job {
@@ -152,6 +171,7 @@ export const DEFAULT_STYLE_OPTIONS: StyleOptions = {
   color_grade: { ...DEFAULT_COLOR_GRADE },
   cut_margin: 0.06,
   split_screen_framing_y: 50.0,
+  split_screen_framing_y_bottom: 50.0,
 };
 
 export const STATUS_LABELS: Record<JobStatus, string> = {

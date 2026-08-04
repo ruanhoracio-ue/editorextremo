@@ -121,7 +121,28 @@ class StyleOptions(BaseModel):
     split_screen_image: Optional[str] = None
     split_screen_images: List[str] = Field(default_factory=list)
     split_screen_framing_y: float = Field(default=50.0, ge=0.0, le=100.0)
+    split_screen_framing_y_bottom: float = Field(default=50.0, ge=0.0, le=100.0)
     auto_broll_enabled: bool = False
+
+
+# ---------- B-Roll Suggestions ----------
+
+class BRollMediaOption(BaseModel):
+    title: str
+    url: str
+    thumbnail: str
+    media_type: str = "image"  # image or video
+
+
+class BRollSuggestion(BaseModel):
+    id: str
+    start: float
+    end: float
+    keyword: str
+    context_text: str
+    options: List[BRollMediaOption] = []
+    accepted_url: Optional[str] = None
+    status: str = "pending"  # pending, accepted, rejected
 
 
 # ---------- Cut Segment ----------

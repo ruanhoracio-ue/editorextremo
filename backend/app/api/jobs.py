@@ -19,7 +19,7 @@ from app.queue.worker import get_job, update_job, enqueue
 from app.pipeline.render_final import render_final_video
 from app.storage.manager import get_path, get_url, save_upload
 from app.pipeline.color_grade import apply_color_grade
-from app.pipeline.broll import fetch_auto_broll_image
+from app.pipeline.broll import fetch_auto_broll_image, generate_broll_timeline_suggestions
 
 router = APIRouter()
 
@@ -234,8 +234,41 @@ async def trigger_auto_broll(job_id: str):
         "auto_broll_enabled": True,
     })
 
-    update_job(job_id, style_options=StyleOptions(**opts))
-    return {"message": "Auto B-Roll aplicado com sucesso!", "image_path": web_url}
+@router.get("/api/jobs/{job_id}/broll-suggestions")
+async def get_broll_suggestions(job_id: str):
+    job = get_job(job_id)
+    if not job or not job.transcript:
+        raise HTTPException(400, "Transcrição necessária para sugerir B-Rolls.")
+
+    output_dir = Path(get_path(job_id, "")).parent
+    suggestions = generate_broll_timeline_suggestions(job.transcript, output_dir)
+    return {"suggestions": suggestions}
+
+
+class BRollActionRequest(BaseModel):
+    suggestion_id: str
+    media_url: str
+    action: str = "accept"  # accept or reject
+
+
+@router.post("/api/jobs/{job_id}/broll-suggestions/action")
+async def apply_broll_suggestion_action(job_id: str, body: BRollActionRequest):
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job não encontrado")
+
+    opts = job.style_options.model_dump() if job.style_options else {}
+    if body.action == "accept" and body.media_url:
+        opts.update({
+            "layout": "split_screen",
+            "split_screen_image": body.media_url,
+            "split_screen_images": [body.media_url],
+            "auto_broll_enabled": True,
+        })
+        update_job(job_id, style_options=StyleOptions(**opts))
+        return {"message": "B-Roll aceito e aplicado à timeline!", "media_url": body.media_url}
+    
+    return {"message": "Sugestão ignorada."}
 
 
 @router.put("/api/jobs/{job_id}/transcript")

@@ -210,6 +210,34 @@ export async function triggerAutoBroll(jobId: string): Promise<void> {
   }
 }
 
+export async function fetchBRollSuggestions(jobId: string): Promise<import("./types").BRollSuggestion[]> {
+  const res = await fetch(`${API_BASE}/api/jobs/${jobId}/broll-suggestions`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(extractDetail(err) || "Erro ao carregar sugestões de B-Roll");
+  }
+  const data = await res.json();
+  return data.suggestions || [];
+}
+
+export async function actionBRollSuggestion(
+  jobId: string,
+  suggestionId: string,
+  mediaUrl: string,
+  action: "accept" | "reject" = "accept"
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/jobs/${jobId}/broll-suggestions/action`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ suggestion_id: suggestionId, media_url: mediaUrl, action }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(extractDetail(err) || "Erro ao aplicar sugestão de B-Roll");
+  }
+}
+
 export function getVideoUrl(path: string): string {
   if (!path) return "";
   if (path.startsWith("http://") || path.startsWith("https://")) return path;
