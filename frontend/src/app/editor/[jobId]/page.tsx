@@ -1478,7 +1478,8 @@ export default function EditorPage({
                   {/* Single Download Fallback */}
                   {job.final_video_url && (!job.batch_videos || Object.keys(job.batch_videos).length === 0) && (
                     <button
-                      onClick={() => downloadFile(getDownloadUrl(jobId, job.final_video_url.split("/").pop() || "final_video.mp4"), "editu_video_final.mp4")}
+                      onClick={() => downloadFile(getDownloadUrl(jobId, job.final_video_url?.split("/").pop() || "final_video.mp4"), "editu_video_final.mp4")}
+                      data-testid="download-final"
                       className="flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-gradient py-3.5 text-sm font-extrabold text-[#0a0a0a] shadow-xl hover:opacity-90 transition"
                     >
                       ⬇️ Baixar Vídeo Final MP4
