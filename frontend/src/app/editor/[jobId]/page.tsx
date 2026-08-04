@@ -7,6 +7,7 @@ import {
   startRender,
   startBatchRender,
   getVideoUrl,
+  getDownloadUrl,
   updateCuts,
   updateColorGrade,
   uploadSplitImage,
@@ -1448,40 +1449,40 @@ export default function EditorPage({
                       </span>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {Object.entries(job.batch_videos).map(([fmt, url]) => (
-                          <a
-                            key={fmt}
-                            href={getVideoUrl(url)}
-                            download={`editu_video_${fmt.replace(":", "_")}.mp4`}
-                            className="flex items-center justify-between rounded-xl bg-emerald-500/10 border border-emerald-500/30 px-4 py-3 text-xs font-bold text-emerald-300 hover:bg-emerald-500/20 transition"
-                          >
-                            <span>📱 Formato {fmt}</span>
-                            <span className="text-[10px] bg-emerald-400 text-black px-2 py-0.5 rounded font-extrabold">⬇️ Baixar MP4</span>
-                          </a>
-                        ))}
+                        {Object.entries(job.batch_videos).map(([fmt, url]) => {
+                          const fname = url.split("/").pop() || `final_${fmt.replace(":", "_")}.mp4`;
+                          return (
+                            <button
+                              key={fmt}
+                              onClick={() => downloadFile(getDownloadUrl(jobId, fname), `editu_video_${fmt.replace(":", "_")}.mp4`)}
+                              className="flex items-center justify-between rounded-xl bg-emerald-500/10 border border-emerald-500/30 px-4 py-3 text-xs font-bold text-emerald-300 hover:bg-emerald-500/20 transition"
+                            >
+                              <span>📱 Formato {fmt}</span>
+                              <span className="text-[10px] bg-emerald-400 text-black px-2 py-0.5 rounded font-extrabold">⬇️ Baixar MP4</span>
+                            </button>
+                          );
+                        })}
                       </div>
 
                       {job.batch_zip_url && (
-                        <a
-                          href={getVideoUrl(job.batch_zip_url)}
-                          download="editu_videos_lote.zip"
+                        <button
+                          onClick={() => downloadFile(getDownloadUrl(jobId, "export_batch.zip"), "editu_videos_lote.zip")}
                           className="flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-gradient py-3.5 text-sm font-extrabold text-[#0a0a0a] shadow-xl hover:opacity-90 transition mt-2"
                         >
                           📦 Baixar Pacote Completo ZIP (.zip)
-                        </a>
+                        </button>
                       )}
                     </div>
                   )}
 
                   {/* Single Download Fallback */}
                   {job.final_video_url && (!job.batch_videos || Object.keys(job.batch_videos).length === 0) && (
-                    <a
-                      href={getVideoUrl(job.final_video_url)}
-                      download="editu_video_final.mp4"
+                    <button
+                      onClick={() => downloadFile(getDownloadUrl(jobId, job.final_video_url.split("/").pop() || "final_video.mp4"), "editu_video_final.mp4")}
                       className="flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-gradient py-3.5 text-sm font-extrabold text-[#0a0a0a] shadow-xl hover:opacity-90 transition"
                     >
                       ⬇️ Baixar Vídeo Final MP4
-                    </a>
+                    </button>
                   )}
                 </div>
               </div>
@@ -1624,7 +1625,7 @@ export default function EditorPage({
                           : style.subtitle_font === "The Bold Font" ? "'Anton', sans-serif"
                           : style.subtitle_font === "Bebas Neue" ? "'Bebas Neue', sans-serif"
                           : "'Inter', sans-serif",
-                        WebkitTextStroke: style.subtitle_outline_enabled ? `${style.subtitle_outline_width || 2}px ${style.subtitle_outline_color || "#000000"}` : "none",
+                        textShadow: style.subtitle_outline_enabled ? buildExternalOutline(style.subtitle_outline_width || 2, style.subtitle_outline_color || "#000000") : "none",
                         filter: style.subtitle_shadow_enabled ? `drop-shadow(0 ${style.subtitle_shadow_offset || 4}px ${style.subtitle_shadow_offset || 4}px ${style.subtitle_shadow_color || "rgba(0,0,0,0.9)"})` : "none",
                       }}
                     >
@@ -1663,6 +1664,31 @@ function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
   return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+async function downloadFile(url: string, filename: string) {
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+function buildExternalOutline(width: number, color: string): string {
+  const d = Math.max(1, Math.round(width / 2));
+  const c = color;
+  return [
+    `${d}px ${d}px 0 ${c}`,
+    `${-d}px ${d}px 0 ${c}`,
+    `${d}px -${d}px 0 ${c}`,
+    `${-d}px -${d}px 0 ${c}`,
+    `0 ${d}px 0 ${c}`,
+    `0 -${d}px 0 ${c}`,
+    `${d}px 0 0 ${c}`,
+    `-${d}px 0 0 ${c}`,
+  ].join(", ");
 }
 
 function formatTimeExact(seconds: number): string {

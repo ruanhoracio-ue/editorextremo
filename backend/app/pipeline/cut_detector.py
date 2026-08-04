@@ -166,11 +166,14 @@ def compute_keep_segments(
     if current_cluster:
         clusters.append(current_cluster)
 
-    # Convert clusters into keep segments with tight padding (50ms)
+    # Convert clusters into keep segments with smart boundaries:
+    # snap every edge to the closest real silence detected by silencedetect so
+    # cuts land exactly at speech onset/offset instead of relying on Whisper
+    # word timestamps (which can drift) plus a fixed margin.
     keep_segments: List[CutSegment] = []
     for clus in clusters:
-        seg_start = max(0.0, clus[0].start - cut_margin)
-        seg_end = min(total_duration, clus[-1].end + cut_margin)
+        seg_start = _snap_boundary(silences, clus[0].start, total_duration, cut_margin, side="start")
+        seg_end = _snap_boundary(silences, clus[-1].end, total_duration, cut_margin, side="end")
 
         # Ensure no overlap with previous segment
         if keep_segments and seg_start < keep_segments[-1].end:
@@ -184,6 +187,47 @@ def compute_keep_segments(
                 ))
 
     return keep_segments, silences
+
+
+def _snap_boundary(
+    silences: List[SilenceRange],
+    word_time: float,
+    total_duration: float,
+    cut_margin: float,
+    snap_window: float = 0.40,
+    side: str = "start",
+) -> float:
+    """
+    Snap a keep-segment boundary to the nearest detected silence edge so cuts
+    land exactly in quiet zones instead of mid-sound.
+
+    side="start": find the silence whose end is closest before the first word
+    and use its end as the segment start (exact speech onset, trims leading
+    silence so the video starts right when the person talks). Falls back to
+    word_time - cut_margin when no silence is nearby.
+
+    side="end": find the silence whose start is closest after the last word and
+    use its start as the segment end (exact speech offset, trims trailing
+    silence so the video ends cleanly). Falls back to word_time + cut_margin.
+    """
+    if side == "start":
+        best = None
+        for s in silences:
+            if s.end <= word_time + 1e-6 and s.end >= word_time - snap_window:
+                if best is None or s.end > best.end:
+                    best = s
+        if best is not None:
+            return round(max(0.0, best.end), 3)
+        return round(max(0.0, word_time - cut_margin), 3)
+
+    best = None
+    for s in silences:
+        if s.start >= word_time - 1e-6 and s.start <= word_time + snap_window:
+            if best is None or s.start < best.start:
+                best = s
+    if best is not None:
+        return round(min(total_duration, best.start), 3)
+    return round(min(total_duration, word_time + cut_margin), 3)
 
 
 def adjust_transcript_for_cuts(

@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, BackgroundTasks, UploadFile, File
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from app.models.schemas import (
@@ -16,7 +17,7 @@ from app.models.schemas import (
 )
 from app.queue.worker import get_job, update_job, enqueue
 from app.pipeline.render_final import render_final_video
-from app.storage.manager import get_path, save_upload
+from app.storage.manager import get_path, get_url, save_upload
 from app.pipeline.color_grade import apply_color_grade
 from app.pipeline.broll import fetch_auto_broll_image
 
@@ -47,7 +48,8 @@ async def get_job_status(job_id: str):
 
     final_url = None
     if job.final_video and os.path.exists(job.final_video):
-        final_url = f"/storage/{job_id}/final_video.mp4"
+        fname = os.path.basename(job.final_video)
+        final_url = f"/storage/{job_id}/{fname}"
 
     split_url = None
     if job.style_options and job.style_options.split_screen_image:
@@ -86,6 +88,8 @@ async def get_job_status(job_id: str):
         "silences": job.silences,
         "error_message": job.error_message,
         "created_at": job.created_at.isoformat() if job.created_at else None,
+        "batch_videos": job.batch_videos,
+        "batch_zip_url": job.batch_zip_url,
     }
 
 
@@ -333,12 +337,12 @@ def _run_batch_render_pipeline(job: Job, formats: List[str]):
                     zipf.write(fpath, arcname=f"editu_video_{fname}")
 
         batch_zip_url = get_url(job.id, zip_filename)
-        first_video = list(batch_videos.values())[0] if batch_videos else None
+        first_video_path = rendered_files[0][1] if rendered_files else None
 
         update_job(
             job.id,
             status=JobStatus.DONE,
-            final_video=first_video,
+            final_video=first_video_path,
             batch_videos=batch_videos,
             batch_zip_url=batch_zip_url,
             progress=100,
@@ -347,3 +351,22 @@ def _run_batch_render_pipeline(job: Job, formats: List[str]):
         import traceback
         traceback.print_exc()
         update_job(job.id, status=JobStatus.ERROR, error_message=str(e))
+
+
+@router.get("/api/jobs/{job_id}/download/{filename}")
+async def download_job_file(job_id: str, filename: str):
+    """Download a rendered file with Content-Disposition: attachment (forces native save dialog)."""
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job não encontrado")
+
+    safe = os.path.basename(filename)
+    file_path = get_path(job_id, safe)
+    if not os.path.exists(file_path):
+        raise HTTPException(404, "Arquivo não encontrado")
+
+    return FileResponse(
+        path=str(file_path),
+        filename=safe,
+        media_type="application/octet-stream",
+    )

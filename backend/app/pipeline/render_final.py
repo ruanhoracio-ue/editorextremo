@@ -111,7 +111,7 @@ def render_final_video(
     # --- Dynamic Zoom Filter ---
     current_label = "base_canvas"
     if style_options.zoom_enabled:
-        zoom_filter = _build_varied_zoom_filter(cuts, transcript, style_options.zoom_intensity)
+        zoom_filter = _build_varied_zoom_filter(cuts, transcript, style_options.zoom_intensity, canvas_w, canvas_h)
         if zoom_filter:
             filters.append(f"[{current_label}]{zoom_filter}[zoomed_canvas]")
             current_label = "zoomed_canvas"
@@ -158,6 +158,8 @@ def _build_varied_zoom_filter(
     cuts: Optional[List] = None,
     transcript: Optional[List[TranscriptSegment]] = None,
     zoom_intensity: float = 1.18,
+    canvas_w: int = 1080,
+    canvas_h: int = 1920,
 ) -> str:
     """Build FFmpeg filter that alternates zoom in (1.18x) on EVERY cut segment change."""
     conditions = []
@@ -182,7 +184,7 @@ def _build_varied_zoom_filter(
     return (
         f"zoompan=z='{z_expr}'"
         f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
-        f":d=1:s=1080x1920:fps=30"
+        f":d=1:s={canvas_w}x{canvas_h}:fps=30"
     )
 
 
@@ -194,7 +196,11 @@ def _simple_render(
     transcript: Optional[List[TranscriptSegment]],
 ) -> str:
     """Fallback render."""
-    vf_parts = ["scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1"]
+    aspect = getattr(style_options, "aspect_ratio", "9:16") or "9:16"
+    canvas_w, canvas_h = _get_canvas_dimensions(aspect)
+    vf_parts = [
+        f"scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=increase,crop={canvas_w}:{canvas_h},setsar=1"
+    ]
 
     if style_options.subtitle_style == "basic" and transcript:
         ass_path = _generate_ass_subtitles(clean_video_path, transcript, style_options)
@@ -286,12 +292,8 @@ def _generate_ass_subtitles(
     theme = style.subtitle_theme.value if hasattr(style.subtitle_theme, "value") else str(style.subtitle_theme)
 
     if theme == "andromeda":
-        border_style = 3
-        back_color = "&H00000000"
         primary_color = "&H00FFFFFF"
     elif theme == "energy":
-        border_style = 3
-        back_color = "&H00FFFFFF"
         primary_color = "&H00000000"
     elif theme == "million":
         primary_color = "&H00FFFFFF"

@@ -79,7 +79,7 @@ def list_jobs() -> list[Job]:
         return list(_jobs.values())
 
 
-def enqueue(job: Job, task_fn: Callable[[Job], None]) -> None:
+def enqueue(job: Job, task_fn: Callable[..., None], *args, **kwargs) -> None:
     """
     Enqueue a job to be processed by task_fn in a background thread.
 
@@ -89,7 +89,7 @@ def enqueue(job: Job, task_fn: Callable[[Job], None]) -> None:
 
     def _run():
         try:
-            task_fn(job)
+            task_fn(job, *args, **kwargs)
         except Exception as e:
             traceback.print_exc()
             update_job(job.id, status=JobStatus.ERROR, error_message=str(e))

@@ -42,9 +42,12 @@ class SubtitlePosition(str, Enum):
 
 class SubtitleFont(str, Enum):
     INTER = "Inter"
+    TIKTOK = "TikTok Medium"
+    HELVETICA = "Helvetica"
     MONTSERRAT = "Montserrat"
+    LATO = "Lato"
+    THE_BOLD = "The Bold Font"
     BEBAS = "Bebas Neue"
-    IMPACT = "Impact"
 
 
 class SubtitleTheme(str, Enum):
@@ -98,7 +101,10 @@ class StyleOptions(BaseModel):
     subtitle_outline_color: str = "#000000"
     subtitle_bg_color: str = "transparent"
     subtitle_outline_enabled: bool = False
+    subtitle_outline_width: float = Field(default=2.0, ge=0.0, le=20.0)
     subtitle_shadow_enabled: bool = False
+    subtitle_shadow_offset: int = Field(default=4, ge=0, le=30)
+    subtitle_shadow_color: str = "#000000"
     subtitle_letter_spacing: int = Field(default=0, ge=-10, le=20)
     subtitle_font_size: int = Field(default=58, ge=24, le=120)
     subtitle_max_lines: int = Field(default=1, ge=1, le=2)
@@ -151,6 +157,9 @@ class Job(BaseModel):
     # Transcript
     transcript: Optional[List[TranscriptSegment]] = None
     raw_transcript: Optional[List[TranscriptSegment]] = None
+
+    # Style options
+    style_options: Optional[StyleOptions] = None
 
     # Cut info
     cuts: Optional[List[CutSegment]] = None

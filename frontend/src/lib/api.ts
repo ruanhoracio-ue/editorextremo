@@ -2,6 +2,19 @@ import { Job, StyleOptions, CutSegment, TranscriptSegment, ColorGradeOptions } f
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+function extractDetail(err: unknown): string | null {
+  if (!err || typeof err !== "object") return null;
+  const detail = (err as { detail?: unknown }).detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((d) => (typeof d === "string" ? d : typeof d === "object" && d !== null ? (d as { msg?: unknown }).msg ?? JSON.stringify(d) : JSON.stringify(d)))
+      .filter(Boolean)
+      .join("; ");
+  }
+  return null;
+}
+
 export function uploadVideo(
   file: File,
   onProgress?: (pct: number) => void
@@ -72,7 +85,7 @@ export async function setStyleOptions(
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Erro ao salvar estilo");
+    throw new Error(extractDetail(err) || "Erro ao salvar estilo");
   }
 }
 
@@ -83,7 +96,7 @@ export async function startRender(jobId: string): Promise<void> {
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Erro ao iniciar renderização");
+    throw new Error(extractDetail(err) || "Erro ao iniciar renderização");
   }
 }
 
@@ -96,7 +109,7 @@ export async function startBatchRender(jobId: string, formats: string[]): Promis
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Erro ao iniciar renderização em lote");
+    throw new Error(extractDetail(err) || "Erro ao iniciar renderização em lote");
   }
 }
 
@@ -112,7 +125,7 @@ export async function updateTranscript(
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Erro ao atualizar transcrição");
+    throw new Error(extractDetail(err) || "Erro ao atualizar transcrição");
   }
 }
 
@@ -128,7 +141,7 @@ export async function updateCuts(
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Erro ao atualizar cortes");
+    throw new Error(extractDetail(err) || "Erro ao atualizar cortes");
   }
 }
 
@@ -144,7 +157,7 @@ export async function updateColorGrade(
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Erro ao atualizar color grade");
+    throw new Error(extractDetail(err) || "Erro ao atualizar color grade");
   }
 }
 
@@ -162,7 +175,7 @@ export async function uploadSplitImage(
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Erro ao enviar mídia de referência");
+    throw new Error(extractDetail(err) || "Erro ao enviar mídia de referência");
   }
   return res.json();
 }
@@ -181,7 +194,7 @@ export async function uploadSplitImages(
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Erro ao enviar mídias de referência");
+    throw new Error(extractDetail(err) || "Erro ao enviar mídias de referência");
   }
   return res.json();
 }
@@ -193,11 +206,15 @@ export async function triggerAutoBroll(jobId: string): Promise<void> {
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Erro ao gerar Auto B-Roll");
+    throw new Error(extractDetail(err) || "Erro ao gerar Auto B-Roll");
   }
 }
 
 export function getVideoUrl(path: string): string {
   if (path.startsWith("http")) return path;
   return `${API_BASE}${path}`;
+}
+
+export function getDownloadUrl(jobId: string, filename: string): string {
+  return `${API_BASE}/api/jobs/${jobId}/download/${encodeURIComponent(filename)}`;
 }
