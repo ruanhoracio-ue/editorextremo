@@ -211,8 +211,21 @@ export async function triggerAutoBroll(jobId: string): Promise<void> {
 }
 
 export function getVideoUrl(path: string): string {
-  if (path.startsWith("http")) return path;
-  return `${API_BASE}${path}`;
+  if (!path) return "";
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+
+  const storageIndex = path.indexOf("/storage/");
+  if (storageIndex !== -1) {
+    const relPath = path.substring(storageIndex);
+    return `${API_BASE}${relPath}`;
+  }
+
+  if (path.startsWith("storage/")) {
+    return `${API_BASE}/${path}`;
+  }
+
+  const cleanPath = path.startsWith("/") ? path : `/${path}`;
+  return `${API_BASE}${cleanPath}`;
 }
 
 export function getDownloadUrl(jobId: string, filename: string): string {

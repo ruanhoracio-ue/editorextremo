@@ -173,16 +173,18 @@ async def upload_split_image(job_id: str, file: UploadFile = File(...)):
     if file.filename:
         ext = os.path.splitext(file.filename)[1].lower() or ".jpg"
 
-    saved_path = await save_upload(job_id, f"split_image{ext}", file)
+    filename = f"split_image{ext}"
+    saved_path = await save_upload(job_id, filename, file)
+    web_url = get_url(job_id, filename)
     opts = job.style_options.model_dump() if job.style_options else {}
     opts.update({
         "layout": "split_screen",
-        "split_screen_image": saved_path,
-        "split_screen_images": [saved_path],
+        "split_screen_image": web_url,
+        "split_screen_images": [web_url],
     })
 
     update_job(job_id, style_options=StyleOptions(**opts))
-    return {"message": "Mídia de referência salva!", "path": saved_path}
+    return {"message": "Mídia de referência salva!", "path": web_url}
 
 
 @router.post("/api/jobs/{job_id}/split-images")
@@ -191,21 +193,22 @@ async def upload_split_images(job_id: str, files: List[UploadFile] = File(...)):
     if not job:
         raise HTTPException(404, "Job não encontrado")
 
-    saved_paths = []
+    saved_urls = []
     for idx, f in enumerate(files):
         ext = os.path.splitext(f.filename or ".jpg")[1].lower() or ".jpg"
-        p = await save_upload(job_id, f"split_image_{idx}{ext}", f)
-        saved_paths.append(p)
+        fn = f"split_image_{idx}{ext}"
+        await save_upload(job_id, fn, f)
+        saved_urls.append(get_url(job_id, fn))
 
     opts = job.style_options.model_dump() if job.style_options else {}
     opts.update({
         "layout": "split_screen",
-        "split_screen_image": saved_paths[0] if saved_paths else None,
-        "split_screen_images": saved_paths,
+        "split_screen_image": saved_urls[0] if saved_urls else None,
+        "split_screen_images": saved_urls,
     })
 
     update_job(job_id, style_options=StyleOptions(**opts))
-    return {"message": "Múltiplas mídias de split salvas!", "paths": saved_paths}
+    return {"message": "Múltiplas mídias de split salvas!", "paths": saved_urls}
 
 
 @router.post("/api/jobs/{job_id}/auto-broll")
@@ -220,16 +223,19 @@ async def trigger_auto_broll(job_id: str):
     if not img_path:
         raise HTTPException(500, "Não foi possível buscar imagem de B-Roll automática.")
 
+    filename = os.path.basename(img_path)
+    web_url = get_url(job_id, filename)
+
     opts = job.style_options.model_dump() if job.style_options else {}
     opts.update({
         "layout": "split_screen",
-        "split_screen_image": img_path,
-        "split_screen_images": [img_path],
+        "split_screen_image": web_url,
+        "split_screen_images": [web_url],
         "auto_broll_enabled": True,
     })
 
     update_job(job_id, style_options=StyleOptions(**opts))
-    return {"message": "Auto B-Roll aplicado com sucesso!", "image_path": img_path}
+    return {"message": "Auto B-Roll aplicado com sucesso!", "image_path": web_url}
 
 
 @router.put("/api/jobs/{job_id}/transcript")
