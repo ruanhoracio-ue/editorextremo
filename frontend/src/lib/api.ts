@@ -1,6 +1,6 @@
 import { Job, StyleOptions, CutSegment, TranscriptSegment, ColorGradeOptions } from "./types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://editorextremo.onrender.com";
 
 function extractDetail(err: unknown): string | null {
   if (!err || typeof err !== "object") return null;
