@@ -49,6 +49,11 @@ export default function EditorPage({
   const [highlightColor, setHighlightColor] = useState("#10b981");
   const [selectedExportFormats, setSelectedExportFormats] = useState<string[]>(["9:16", "4:5", "1:1"]);
 
+  // Trim (in/out points) — sobre a linha do tempo ORIGINAL. Deriva os cuts enviados ao backend.
+  const [trimStart, setTrimStart] = useState(0);
+  const [trimEnd, setTrimEnd] = useState(0);
+  const [dragKind, setDragKind] = useState<null | "start" | "end" | "playhead">(null);
+
   const [isDraggingSub, setIsDraggingSub] = useState(false);
   const [copiedTx, setCopiedTx] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
@@ -60,6 +65,12 @@ export default function EditorPage({
   const transcriptTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cutTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const splitInputRef = useRef<HTMLInputElement>(null);
+  // Refs espelhando o estado, pra os listeners de drag lerem sempre o valor mais recente
+  const localCutsRef = useRef<CutSegment[]>([]);
+  const trimStartRef = useRef(0);
+  const trimEndRef = useRef(0);
+  const corteDurationRef = useRef(1);
+  const timelineRef = useRef<HTMLDivElement>(null);
   const userTouchedStyle = useRef(false);
 
   // Track when we've done our initial data sync from a finished job
@@ -74,16 +85,28 @@ export default function EditorPage({
 
     const isJobFinished = job.status === "clean_ready" || job.status === "done";
 
-    // Eagerly load cuts/transcript if empty (so user sees something while processing)
-    if (job.cuts && localCuts.length === 0) setLocalCuts(job.cuts);
+    // Carrega os segmentos-base UMA vez (quando os cortes chegam da IA) e inicializa o trim
+    // a partir dos limites habilitados. Depois disso NÃO sobrescrevemos os segmentos-base:
+    // eles são a fonte da verdade da edição, e o que enviamos ao backend é derivado (trim + toggles).
+    if (job.cuts && job.cuts.length > 0 && localCuts.length === 0) {
+      setLocalCuts(job.cuts);
+      localCutsRef.current = job.cuts;
+      const en = job.cuts.filter((c) => c.enabled);
+      const a = en.length ? en[0].start : job.cuts[0].start;
+      const b = en.length ? en[en.length - 1].end : job.cuts[job.cuts.length - 1].end;
+      setTrimStart(a);
+      setTrimEnd(b);
+      trimStartRef.current = a;
+      trimEndRef.current = b;
+    }
     if (job.transcript && localTranscript.length === 0) setLocalTranscript(job.transcript);
 
-    // Force sync when job finishes its initial pipeline or a reprocess
     if (isJobFinished) {
-      if (!hasInitialSyncedFinishedJob.current || isReprocessing) {
-        if (job.cuts) setLocalCuts(job.cuts);
+      hasInitialSyncedFinishedJob.current = true;
+      // Ao concluir um reprocessamento, o backend recalcula as marcações da transcrição
+      // (adjust_transcript_for_cuts) — só atualizamos a transcrição e liberamos o estado.
+      if (isReprocessing) {
         if (job.transcript) setLocalTranscript(job.transcript);
-        hasInitialSyncedFinishedJob.current = true;
         setIsReprocessing(false);
       }
     }
@@ -249,15 +272,26 @@ export default function EditorPage({
     setIsRendering(false);
   };
 
-  const handleUpdateCutSegment = useCallback(
-    (updatedCuts: CutSegment[]) => {
-      setLocalCuts(updatedCuts);
-      setIsReprocessing(true);
+  // Deriva os cuts enviados ao backend: cada segmento-base é recortado pela janela de trim
+  // [ts, te]; segmentos totalmente fora do trim ficam enabled=false (removidos), os das pontas
+  // são aparados. Segmentos desligados manualmente (silêncios) continuam desligados.
+  const computeEffectiveCuts = (base: CutSegment[], ts: number, te: number): CutSegment[] =>
+    base.map((seg) => {
+      const start = Math.max(seg.start, ts);
+      const end = Math.min(seg.end, te);
+      const overlaps = end - start > 0.05;
+      return overlaps
+        ? { start: Math.round(start * 100) / 100, end: Math.round(end * 100) / 100, enabled: seg.enabled }
+        : { start: seg.start, end: seg.end, enabled: false };
+    });
 
+  const persistCuts = useCallback(
+    (base: CutSegment[], ts: number, te: number) => {
+      setIsReprocessing(true);
       if (cutTimer.current) clearTimeout(cutTimer.current);
       cutTimer.current = setTimeout(async () => {
         try {
-          await updateCuts(jobId, updatedCuts);
+          await updateCuts(jobId, computeEffectiveCuts(base, ts, te));
         } catch {
           setIsReprocessing(false);
         }
@@ -266,8 +300,17 @@ export default function EditorPage({
     [jobId]
   );
 
+  const handleUpdateCutSegment = useCallback(
+    (updatedBase: CutSegment[]) => {
+      setLocalCuts(updatedBase);
+      localCutsRef.current = updatedBase;
+      persistCuts(updatedBase, trimStartRef.current, trimEndRef.current);
+    },
+    [persistCuts]
+  );
+
   const handleToggleCut = useCallback(
-    async (index: number) => {
+    (index: number) => {
       const updated = localCuts.map((c, i) =>
         i === index ? { ...c, enabled: !c.enabled } : c
       );
@@ -276,44 +319,40 @@ export default function EditorPage({
     [localCuts, handleUpdateCutSegment]
   );
 
-  const handleSegmentTimeChange = useCallback(
-    (index: number, field: "start" | "end", val: number) => {
-      if (localCuts.length === 0) return;
-      const newCuts = localCuts.map((c) => ({ ...c }));
-      const seg = newCuts[index];
-      if (!seg) return;
-
-      const maxDuration = job?.original_duration || job?.clean_duration || 1;
-
-      if (field === "start") {
-        const minStart = index > 0 ? newCuts[index - 1].end : 0;
-        const maxStart = seg.end - 0.1;
-        const clamped = Math.max(minStart, Math.min(val, maxStart));
-        newCuts[index].start = Math.round(clamped * 100) / 100;
-      } else {
-        const minEnd = seg.start + 0.1;
-        const maxEnd = index < newCuts.length - 1 ? newCuts[index + 1].start : maxDuration;
-        const clamped = Math.max(minEnd, Math.min(val, maxEnd));
-        newCuts[index].end = Math.round(clamped * 100) / 100;
-      }
-      handleUpdateCutSegment(newCuts);
+  // Define a janela de trim (in/out). persist=false enquanto arrasta; salva ao soltar.
+  const commitTrim = useCallback(
+    (a: number, b: number, opts: { persist?: boolean } = {}) => {
+      const na = Math.round(a * 100) / 100;
+      const nb = Math.round(b * 100) / 100;
+      trimStartRef.current = na;
+      trimEndRef.current = nb;
+      setTrimStart(na);
+      setTrimEnd(nb);
+      if (opts.persist !== false) persistCuts(localCutsRef.current, na, nb);
     },
-    [localCuts, job?.original_duration, job?.clean_duration, handleUpdateCutSegment]
+    [persistCuts]
   );
 
-  const setStartAtCurrentTime = () => {
-    if (localCuts.length === 0) return;
-    const newStart = Math.max(0, Math.min(currentTime, (localCuts[0]?.end || 1) - 0.1));
-    handleSegmentTimeChange(0, "start", newStart);
-  };
+  const setTrimStartValue = useCallback(
+    (v: number, opts?: { persist?: boolean }) => {
+      const b = trimEndRef.current || corteDurationRef.current;
+      const a = Math.max(0, Math.min(v, b - 0.2));
+      commitTrim(a, b, opts);
+    },
+    [commitTrim]
+  );
+  const setTrimEndValue = useCallback(
+    (v: number, opts?: { persist?: boolean }) => {
+      const dur = corteDurationRef.current;
+      const a = trimStartRef.current;
+      const b = Math.min(dur, Math.max(v, a + 0.2));
+      commitTrim(a, b, opts);
+    },
+    [commitTrim]
+  );
 
-  const setEndAtCurrentTime = () => {
-    if (localCuts.length === 0) return;
-    const lastIdx = localCuts.length - 1;
-    const maxDur = job?.original_duration || job?.clean_duration || 1;
-    const newEnd = Math.min(maxDur, Math.max((localCuts[lastIdx]?.start || 0) + 0.1, currentTime));
-    handleSegmentTimeChange(lastIdx, "end", newEnd);
-  };
+  const setStartAtCurrentTime = () => setTrimStartValue(currentTime);
+  const setEndAtCurrentTime = () => setTrimEndValue(currentTime);
 
   const handleAddManualCut = () => {
     const maxDur = job?.original_duration || job?.clean_duration || 1;
@@ -343,6 +382,48 @@ export default function EditorPage({
     const updated = localCuts.filter((_, i) => i !== index);
     handleUpdateCutSegment(updated);
   };
+
+  // Converte a posição X do mouse na trilha em tempo (na duração ORIGINAL)
+  const timeFromClientX = useCallback((clientX: number) => {
+    const el = timelineRef.current;
+    if (!el) return 0;
+    const rect = el.getBoundingClientRect();
+    const pct = (clientX - rect.left) / rect.width;
+    return Math.max(0, Math.min(1, pct)) * corteDurationRef.current;
+  }, []);
+
+  // Arraste das alças de início/fim e do playhead
+  useEffect(() => {
+    if (!dragKind) return;
+    // Pausa o preview ao começar a arrastar uma alça, pra o scrub ficar limpo
+    if (dragKind === "start" || dragKind === "end") videoRef.current?.pause();
+    const onMove = (e: PointerEvent) => {
+      const t = timeFromClientX(e.clientX);
+      if (dragKind === "start") {
+        setTrimStartValue(t, { persist: false });
+        handleSeek(Math.min(t, trimEndRef.current - 0.2));
+      } else if (dragKind === "end") {
+        setTrimEndValue(t, { persist: false });
+        handleSeek(Math.max(t, trimStartRef.current + 0.2));
+      } else {
+        handleSeek(t);
+      }
+    };
+    const onUp = () => {
+      if (dragKind === "start" || dragKind === "end") {
+        persistCuts(localCutsRef.current, trimStartRef.current, trimEndRef.current);
+      }
+      setDragKind(null);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    // handleSeek é estável o suficiente (usa refs); evitamos re-subscrever a cada render
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragKind, timeFromClientX, setTrimStartValue, setTrimEndValue, persistCuts]);
 
   const handleGradeChange = useCallback(
     (key: keyof ColorGradeOptions, value: number) => {
@@ -650,19 +731,26 @@ export default function EditorPage({
 
   const isCleanReady = job.status === "clean_ready" || job.status === "done";
   const totalDuration = job.clean_duration || job.original_duration || 1;
-  const currentVideoPath = job.clean_video_url || job.final_video_url || "";
+  // Na aba de corte trabalhamos no tempo ORIGINAL (trim mapeia 1:1 com o material bruto).
+  const corteDuration = job.original_duration || totalDuration;
+  corteDurationRef.current = corteDuration;
+  const dispTrimStart = trimStart;
+  const dispTrimEnd = trimEnd || corteDuration;
+  const currentVideoPath =
+    (activeTab === "corte" ? job.original_video_url : "") ||
+    job.clean_video_url ||
+    job.final_video_url ||
+    "";
 
   const cg = style.color_grade || DEFAULT_STYLE_OPTIONS.color_grade;
   const cssGradeFilter = `contrast(${Math.round((cg.contrast ?? 1.0) * 100)}%) saturate(${Math.round((cg.saturation ?? 1.0) * 100)}%) brightness(${Math.round((cg.brightness ?? 1.0) * 100)}%) sepia(${Math.max(0, Math.round((cg.warmth ?? 0) * 50))}%)`;
   const framingYPercent = style.split_screen_framing_y ?? 50.0;
   const framingYBottomPercent = style.split_screen_framing_y_bottom ?? 50.0;
 
-  const segmentBadges = ["HOOK", "DINÂMICA", "RECURSOS", "CONTEÚDO", "CTA"];
-
   return (
     <main className="min-h-screen bg-[#0a0a0a] text-[#fafafa] font-sans" onMouseUp={handleMouseUp}>
       {/* ═══════════ HEADER COM FASES E STATUS ═══════════ */}
-      <header className="sticky top-0 z-40 border-b border-[#262626] bg-[#0a0a0a]/90 backdrop-blur-md px-6 py-3.5">
+      <header className="sticky top-0 z-40 border-b border-[#242424] bg-[#0a0a0a]/90 backdrop-blur-md px-6 py-3.5">
         <div className="mx-auto flex max-w-[1440px] items-center justify-between">
           <div className="flex items-center gap-4">
             <div>
@@ -682,7 +770,7 @@ export default function EditorPage({
           </div>
 
           {/* PROCESS STEPPER TABS */}
-          <div className="flex items-center rounded-full bg-[#171717] p-1 border border-[#262626]">
+          <div className="flex items-center rounded-full bg-[#141414] p-1 border border-[#242424]">
             <button
               onClick={() => setActiveTab("corte")}
               className={`flex items-center gap-2 rounded-full px-5 py-1.5 text-xs font-semibold transition-all ${
@@ -731,7 +819,7 @@ export default function EditorPage({
               <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-400" />
               {STATUS_LABEL[job.status] || "Processando"} — {job.progress || 0}%
             </div>
-            <div className="h-2 w-full max-w-xl overflow-hidden rounded-full bg-black/40 border border-[#262626]">
+            <div className="h-2 w-full max-w-xl overflow-hidden rounded-full bg-black/40 border border-[#242424]">
               <div className="h-full bg-brand-gradient transition-all duration-300" style={{ width: `${job.progress || 0}%` }} />
             </div>
             <p className="mt-2 text-xs text-emerald-200/80">
@@ -744,262 +832,292 @@ export default function EditorPage({
           <div className="space-y-6 min-w-0 w-full">
             {/* ✂️ FASE 1 — CORTE TAB */}
             {activeTab === "corte" && (
-              <div className="space-y-6 animate-in">
-                {/* Control Bar: Timecode, Play, Zoom, Fit */}
-                <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[#262626] bg-[#171717] p-4 shadow-xl">
+              <div className="space-y-4 animate-in">
+                {/* Barra de controle */}
+                <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[#242424] bg-[#141414] p-3">
                   <div className="flex items-center gap-3">
                     <button
                       onClick={togglePlayPause}
-                      className="shiny-cta h-10 w-10 text-base font-bold text-white shadow-lg"
+                      className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500 text-sm font-bold text-black transition hover:bg-emerald-400"
                     >
-                      <span className="shiny-dots" aria-hidden="true" />
-                      <span className="shiny-cta-content">{isPlaying ? "⏸" : "▶"}</span>
+                      {isPlaying ? "⏸" : "▶"}
                     </button>
-                    <div className="font-mono text-xs text-[#fafafa] font-semibold bg-[#0a0a0a] px-3 py-1.5 rounded-lg border border-[#262626]">
-                      {formatTime(currentTime)} / {formatTime(totalDuration)}
+                    <div className="font-mono text-xs font-semibold text-[#ededed] bg-[#0a0a0a] px-3 py-1.5 rounded-lg border border-[#242424]">
+                      {formatTime(currentTime)} <span className="text-[#5c5c5c]">/ {formatTime(corteDuration)}</span>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-[#a8a8a8] font-medium">Zoom</span>
-                      <input
-                        type="range"
-                        min="50"
-                        max="200"
-                        value={zoomLevel}
-                        onChange={(e) => setZoomLevel(parseInt(e.target.value))}
-                        className="w-28 accent-emerald-400 cursor-pointer"
-                      />
-                    </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[11px] text-[#6b6b6b]">Zoom</span>
+                    <input
+                      type="range"
+                      min="100"
+                      max="300"
+                      value={zoomLevel}
+                      onChange={(e) => setZoomLevel(parseInt(e.target.value))}
+                      className="w-24 accent-emerald-500 cursor-pointer"
+                    />
                     <button
                       onClick={() => setZoomLevel(100)}
-                      className="rounded-xl border border-[#262626] bg-[#171717] px-3 py-1.5 text-xs font-semibold text-[#a8a8a8] transition hover:bg-[#262626] hover:text-white"
+                      className="rounded-lg border border-[#242424] px-2.5 py-1 text-[11px] font-medium text-[#9a9a9a] transition hover:border-[#333] hover:text-white"
                     >
-                      Fit
+                      Ajustar
                     </button>
                   </div>
                 </div>
 
-                {/* ✂️ PAINEL DE CORTE MANUAL DO INÍCIO & FINAL */}
-                <div className="rounded-2xl border border-emerald-500/30 bg-[#171717] p-5 shadow-2xl space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#262626] pb-3">
-                    <div>
-                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                        <span>✂️</span> Corte Manual do Início & Final
-                      </h3>
-                      <p className="text-[11px] text-[#a8a8a8]">
-                        Ajuste com precisão onde o vídeo deve começar e terminar, ou use o tempo atual do player.
-                      </p>
-                    </div>
-                    {isReprocessing && (
-                      <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-300 animate-pulse">
-                        <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                        Reprocessando cortes...
+                {/* Ajuste fino de início e fim */}
+                <div className="rounded-2xl border border-[#242424] bg-[#141414] p-4">
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <h3 className="text-[13px] font-semibold text-[#ededed]">Início &amp; fim do vídeo</h3>
+                    {isReprocessing ? (
+                      <span className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-300">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        Aplicando corte…
+                      </span>
+                    ) : (
+                      <span className="hidden sm:block text-[11px] text-[#6b6b6b]">
+                        Arraste as alças na linha do tempo ou ajuste aqui
                       </span>
                     )}
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* CORTE INICIAL */}
-                    <div className="rounded-xl border border-[#262626] bg-[#0a0a0a] p-4 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
-                          🟢 Início do Vídeo (Corte Inicial)
-                        </span>
-                        <span className="font-mono text-sm font-bold text-white">
-                          {localCuts[0] ? `${localCuts[0].start.toFixed(2)}s` : "0.00s"}
-                        </span>
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Início */}
+                    <div className="rounded-xl border border-[#1f1f1f] bg-[#0d0d0d] p-3">
+                      <div className="mb-2 flex items-center gap-2 text-[11px] font-medium text-[#8f8f8f]">
+                        <span className="h-2 w-2 rounded-full bg-emerald-400" /> Começa em
                       </div>
-
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-baseline gap-1">
                         <input
                           type="number"
                           step="0.1"
-                          min="0"
-                          max={localCuts[0] ? Math.max(0, localCuts[0].end - 0.1) : 100}
-                          value={localCuts[0] ? localCuts[0].start : 0}
-                          onChange={(e) => handleSegmentTimeChange(0, "start", parseFloat(e.target.value) || 0)}
-                          className="w-24 rounded-lg border border-[#262626] bg-[#171717] px-3 py-1.5 font-mono text-xs text-white focus:border-emerald-400 focus:outline-none"
+                          min={0}
+                          max={Math.max(0, dispTrimEnd - 0.2)}
+                          value={Number(dispTrimStart.toFixed(2))}
+                          onChange={(e) => setTrimStartValue(parseFloat(e.target.value) || 0)}
+                          className="w-20 bg-transparent font-mono text-xl font-semibold text-white focus:outline-none"
                         />
-                        <input
-                          type="range"
-                          min="0"
-                          max={localCuts[0] ? Math.max(0, localCuts[0].end - 0.1) : 100}
-                          step="0.05"
-                          value={localCuts[0] ? localCuts[0].start : 0}
-                          onChange={(e) => handleSegmentTimeChange(0, "start", parseFloat(e.target.value) || 0)}
-                          className="flex-1 accent-emerald-400 cursor-pointer"
-                        />
+                        <span className="text-xs text-[#6b6b6b]">s</span>
+                        <span className="ml-auto font-mono text-xs text-[#6b6b6b]">{formatTime(dispTrimStart)}</span>
                       </div>
-
-                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <div className="mt-2 flex items-center gap-1.5">
                         <button
-                          onClick={() => handleSegmentTimeChange(0, "start", (localCuts[0]?.start || 0) - 0.5)}
-                          className="rounded-lg border border-[#262626] bg-[#171717] px-2.5 py-1 text-[11px] font-bold text-[#a8a8a8] hover:text-white hover:border-emerald-500/40"
+                          onClick={() => setTrimStartValue(dispTrimStart - 0.5)}
+                          className="rounded-md border border-[#242424] px-2 py-1 text-[11px] font-medium text-[#9a9a9a] transition hover:border-[#333] hover:text-white"
                         >
-                          -0.5s
+                          −0,5s
                         </button>
                         <button
-                          onClick={() => handleSegmentTimeChange(0, "start", (localCuts[0]?.start || 0) + 0.5)}
-                          className="rounded-lg border border-[#262626] bg-[#171717] px-2.5 py-1 text-[11px] font-bold text-[#a8a8a8] hover:text-white hover:border-emerald-500/40"
+                          onClick={() => setTrimStartValue(dispTrimStart + 0.5)}
+                          className="rounded-md border border-[#242424] px-2 py-1 text-[11px] font-medium text-[#9a9a9a] transition hover:border-[#333] hover:text-white"
                         >
-                          +0.5s
+                          +0,5s
                         </button>
                         <button
                           onClick={setStartAtCurrentTime}
-                          className="shiny-cta px-3 py-1 text-[11px] font-bold text-white rounded-lg ml-auto"
+                          title="Usar o tempo atual do player"
+                          className="ml-auto rounded-md px-2 py-1 text-[11px] font-medium text-emerald-400 transition hover:bg-emerald-500/10"
                         >
-                          <span className="shiny-cta-content">📍 Cortar Início no Player ({formatTime(currentTime)})</span>
+                          no player
                         </button>
                       </div>
                     </div>
 
-                    {/* CORTE FINAL */}
-                    <div className="rounded-xl border border-[#262626] bg-[#0a0a0a] p-4 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
-                          🔴 Fim do Vídeo (Corte Final)
-                        </span>
-                        <span className="font-mono text-sm font-bold text-white">
-                          {localCuts.length > 0 ? `${localCuts[localCuts.length - 1].end.toFixed(2)}s` : `${totalDuration.toFixed(2)}s`}
-                        </span>
+                    {/* Fim */}
+                    <div className="rounded-xl border border-[#1f1f1f] bg-[#0d0d0d] p-3">
+                      <div className="mb-2 flex items-center gap-2 text-[11px] font-medium text-[#8f8f8f]">
+                        <span className="h-2 w-2 rounded-full bg-rose-400" /> Termina em
                       </div>
-
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-baseline gap-1">
                         <input
                           type="number"
                           step="0.1"
-                          min={localCuts.length > 0 ? localCuts[localCuts.length - 1].start + 0.1 : 0}
-                          max={job?.original_duration || totalDuration}
-                          value={localCuts.length > 0 ? localCuts[localCuts.length - 1].end : totalDuration}
-                          onChange={(e) => handleSegmentTimeChange(localCuts.length - 1, "end", parseFloat(e.target.value) || 0)}
-                          className="w-24 rounded-lg border border-[#262626] bg-[#171717] px-3 py-1.5 font-mono text-xs text-white focus:border-emerald-400 focus:outline-none"
+                          min={Number((dispTrimStart + 0.2).toFixed(2))}
+                          max={corteDuration}
+                          value={Number(dispTrimEnd.toFixed(2))}
+                          onChange={(e) => setTrimEndValue(parseFloat(e.target.value) || 0)}
+                          className="w-20 bg-transparent font-mono text-xl font-semibold text-white focus:outline-none"
                         />
-                        <input
-                          type="range"
-                          min={localCuts.length > 0 ? localCuts[localCuts.length - 1].start + 0.1 : 0}
-                          max={job?.original_duration || totalDuration}
-                          step="0.05"
-                          value={localCuts.length > 0 ? localCuts[localCuts.length - 1].end : totalDuration}
-                          onChange={(e) => handleSegmentTimeChange(localCuts.length - 1, "end", parseFloat(e.target.value) || 0)}
-                          className="flex-1 accent-emerald-400 cursor-pointer"
-                        />
+                        <span className="text-xs text-[#6b6b6b]">s</span>
+                        <span className="ml-auto font-mono text-xs text-[#6b6b6b]">{formatTime(dispTrimEnd)}</span>
                       </div>
-
-                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <div className="mt-2 flex items-center gap-1.5">
                         <button
-                          onClick={() => handleSegmentTimeChange(localCuts.length - 1, "end", (localCuts[localCuts.length - 1]?.end || 0) - 0.5)}
-                          className="rounded-lg border border-[#262626] bg-[#171717] px-2.5 py-1 text-[11px] font-bold text-[#a8a8a8] hover:text-white hover:border-emerald-500/40"
+                          onClick={() => setTrimEndValue(dispTrimEnd - 0.5)}
+                          className="rounded-md border border-[#242424] px-2 py-1 text-[11px] font-medium text-[#9a9a9a] transition hover:border-[#333] hover:text-white"
                         >
-                          -0.5s
+                          −0,5s
                         </button>
                         <button
-                          onClick={() => handleSegmentTimeChange(localCuts.length - 1, "end", (localCuts[localCuts.length - 1]?.end || 0) + 0.5)}
-                          className="rounded-lg border border-[#262626] bg-[#171717] px-2.5 py-1 text-[11px] font-bold text-[#a8a8a8] hover:text-white hover:border-emerald-500/40"
+                          onClick={() => setTrimEndValue(dispTrimEnd + 0.5)}
+                          className="rounded-md border border-[#242424] px-2 py-1 text-[11px] font-medium text-[#9a9a9a] transition hover:border-[#333] hover:text-white"
                         >
-                          +0.5s
+                          +0,5s
                         </button>
                         <button
                           onClick={setEndAtCurrentTime}
-                          className="shiny-cta px-3 py-1 text-[11px] font-bold text-white rounded-lg ml-auto"
+                          title="Usar o tempo atual do player"
+                          className="ml-auto rounded-md px-2 py-1 text-[11px] font-medium text-emerald-400 transition hover:bg-emerald-500/10"
                         >
-                          <span className="shiny-cta-content">📍 Cortar Fim no Player ({formatTime(currentTime)})</span>
+                          no player
                         </button>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* TIMELINE PRO COM RULER, CUT BLOCKS E WAVEFORM AUDIO */}
-                <div className="rounded-2xl border border-[#262626] bg-[#171717] p-6 shadow-2xl overflow-hidden min-w-0 w-full">
-                  <div className="mb-3 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-[#a8a8a8]">
-                    <span>🎞️ Linha do Tempo & Cortes Inteligentes</span>
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={handleAddManualCut}
-                        className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-xs font-bold text-emerald-300 hover:bg-emerald-500/20"
-                      >
-                        ✂️ Split no Player ({formatTime(currentTime)})
-                      </button>
-                      <span className="text-emerald-400 font-mono">{formatDuration(totalDuration)} total</span>
+                {/* Linha do tempo interativa */}
+                <div className="rounded-2xl border border-[#242424] bg-[#141414] p-5 overflow-hidden min-w-0 w-full">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-[13px] font-semibold text-[#ededed]">Linha do tempo</span>
+                      <span className="font-mono text-[11px] text-[#6b6b6b]">
+                        {formatDuration(Math.max(0, dispTrimEnd - dispTrimStart))} / {formatDuration(corteDuration)}
+                      </span>
                     </div>
+                    <button
+                      onClick={handleAddManualCut}
+                      className="rounded-lg border border-[#242424] px-2.5 py-1 text-[11px] font-medium text-[#9a9a9a] transition hover:border-emerald-500/40 hover:text-emerald-300"
+                    >
+                      ✂ Dividir aqui
+                    </button>
                   </div>
 
-                  <div className="relative w-full overflow-x-auto select-none py-2 min-w-0">
-                    <div className="min-w-[700px] relative">
-                      {/* Ruler Bar */}
-                      <div className="flex h-6 w-full items-end justify-between border-b border-[#262626] pb-1 text-[10px] font-mono text-[#737373]">
-                        {Array.from({ length: 9 }).map((_, i) => (
-                          <span key={i}>{((totalDuration / 8) * i).toFixed(2)}s</span>
-                        ))}
+                  <div className="relative w-full overflow-x-auto select-none pt-5 pb-1 min-w-0">
+                    <div
+                      ref={timelineRef}
+                      className="relative"
+                      style={{ width: `${Math.max(100, zoomLevel)}%`, minWidth: "560px" }}
+                    >
+                      {/* Régua */}
+                      <div className="relative h-5 w-full mb-1.5">
+                        {Array.from({ length: 9 }).map((_, i) => {
+                          const p = (i / 8) * 100;
+                          return (
+                            <span
+                              key={i}
+                              className="absolute top-0 -translate-x-1/2 text-[10px] font-mono text-[#5c5c5c]"
+                              style={{ left: `${p}%` }}
+                            >
+                              {formatTime((corteDuration / 8) * i)}
+                            </span>
+                          );
+                        })}
                       </div>
 
-                      {/* Video Cut Blocks Track */}
-                      <div className="relative mt-3 h-20 w-full rounded-xl bg-[#0a0a0a] border border-[#262626] overflow-hidden flex gap-1 p-1">
+                      {/* Track interativa */}
+                      <div
+                        onPointerDown={(e) => {
+                          handleSeek(timeFromClientX(e.clientX));
+                          setDragKind("playhead");
+                        }}
+                        className="relative h-20 w-full rounded-lg bg-[#0a0a0a] border border-[#1f1f1f] overflow-hidden cursor-pointer"
+                      >
+                        {/* Waveform sutil */}
+                        <div className="absolute inset-0 flex items-center justify-between gap-[2px] px-1 opacity-[0.18] pointer-events-none">
+                          {Array.from({ length: 160 }).map((_, i) => {
+                            const h = Math.floor(Math.abs(Math.sin(i * 0.4) * 30 + Math.cos(i * 0.7) * 9 + 5));
+                            return (
+                              <div
+                                key={`wave-${i}`}
+                                className="w-[2px] rounded-full bg-emerald-300"
+                                style={{ height: `${h}px` }}
+                              />
+                            );
+                          })}
+                        </div>
+
+                        {/* Blocos de corte inteligente (posição absoluta = tempo original) */}
                         {localCuts.map((cut, i) => {
-                          const widthPct = Math.max(((cut.end - cut.start) / totalDuration) * 100, 1);
-                          const badgeLabel = segmentBadges[i % segmentBadges.length];
+                          const left = (cut.start / corteDuration) * 100;
+                          const width = Math.max(((cut.end - cut.start) / corteDuration) * 100, 0.6);
                           return (
                             <div
                               key={`cut-${i}`}
-                              onClick={() => {
-                                // Map original cut.start to clean video time offset
-                                const enabledBefore = localCuts.slice(0, i).filter(c => c.enabled);
-                                const cleanOffset = enabledBefore.reduce((acc, c) => acc + (c.end - c.start), 0);
-                                handleSeek(cleanOffset);
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSeek(cut.start);
                                 handleToggleCut(i);
                               }}
-                              className={`relative h-full flex-1 rounded-lg border transition-all cursor-pointer flex flex-col justify-between p-2 overflow-hidden ${
+                              title={cut.enabled ? "Clique para remover este trecho" : "Clique para manter este trecho"}
+                              className={`absolute top-1.5 bottom-1.5 rounded-md border transition-colors cursor-pointer overflow-hidden ${
                                 cut.enabled
-                                  ? "border-emerald-500/40 bg-emerald-950/30 hover:bg-emerald-900/40"
-                                  : "border-rose-500/40 bg-rose-950/40 opacity-50 hover:opacity-75"
+                                  ? "border-emerald-500/25 bg-emerald-500/10 hover:bg-emerald-500/20"
+                                  : "border-rose-500/30 bg-rose-500/10 opacity-50 hover:opacity-75"
                               }`}
-                              style={{ minWidth: `${widthPct}%` }}
+                              style={{ left: `${left}%`, width: `${width}%` }}
                             >
-                              <div className="flex items-center justify-between">
-                                <span className="rounded bg-black/70 px-1.5 py-0.5 text-[9px] font-extrabold tracking-wider text-emerald-400">
-                                  {badgeLabel} #{i + 1}
+                              {!cut.enabled && (
+                                <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-rose-300/80">
+                                  ✕
                                 </span>
-                                <span className="text-[9px] font-mono text-slate-400">{(cut.end - cut.start).toFixed(1)}s</span>
-                              </div>
-                              <div className="text-[10px] font-bold text-white truncate">
-                                {localTranscript[i]?.text || `Segmento ${i + 1}`}
-                              </div>
+                              )}
                             </div>
                           );
                         })}
-                      </div>
 
-                      {/* Audio Waveform Track */}
-                      <div className="relative mt-2 h-14 w-full rounded-xl bg-black/80 border border-white/10 overflow-hidden p-2 flex items-center justify-between gap-[2px]">
-                        {Array.from({ length: 120 }).map((_, i) => {
-                          const h = Math.floor(Math.abs(Math.sin(i * 0.4) * 36 + Math.cos(i * 0.7) * 12 + 8));
-                          return (
-                            <div
-                              key={`wave-${i}`}
-                              className="w-[2px] rounded-full bg-gradient-to-t from-emerald-500 to-emerald-300 opacity-80"
-                              style={{ height: `${h}px` }}
-                            />
-                          );
-                        })}
-                      </div>
+                        {/* Máscara das pontas cortadas */}
+                        <div
+                          className="absolute inset-y-0 left-0 bg-black/70 pointer-events-none"
+                          style={{ width: `${(dispTrimStart / corteDuration) * 100}%` }}
+                        />
+                        <div
+                          className="absolute inset-y-0 right-0 bg-black/70 pointer-events-none"
+                          style={{ width: `${Math.max(0, (1 - dispTrimEnd / corteDuration) * 100)}%` }}
+                        />
 
-                      {/* Bright Emerald Playhead Bar */}
-                      <div
-                        className="absolute top-0 bottom-0 w-[3px] bg-emerald-400 z-30 pointer-events-none transition-all shadow-[0_0_12px_#10b981]"
-                        style={{ left: `${(currentTime / totalDuration) * 100}%` }}
-                      >
-                        <div className="h-0 w-0 border-x-[6px] border-x-transparent border-t-[8px] border-t-emerald-400 -ml-[4.5px] -mt-1" />
+                        {/* Alça de INÍCIO */}
+                        <div
+                          onPointerDown={(e) => {
+                            e.stopPropagation();
+                            setDragKind("start");
+                          }}
+                          className="group absolute inset-y-0 z-40 w-5 -ml-2.5 cursor-ew-resize"
+                          style={{ left: `${(dispTrimStart / corteDuration) * 100}%` }}
+                        >
+                          <div className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 bg-emerald-400" />
+                          <div className="absolute top-1/2 left-1/2 h-9 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-400 shadow-md transition group-hover:h-11" />
+                          <span className="absolute -top-5 left-1/2 -translate-x-1/2 rounded bg-emerald-400 px-1.5 py-0.5 text-[9px] font-mono font-bold text-black opacity-0 transition group-hover:opacity-100 whitespace-nowrap">
+                            {formatTime(dispTrimStart)}
+                          </span>
+                        </div>
+
+                        {/* Alça de FIM */}
+                        <div
+                          onPointerDown={(e) => {
+                            e.stopPropagation();
+                            setDragKind("end");
+                          }}
+                          className="group absolute inset-y-0 z-40 w-5 -ml-2.5 cursor-ew-resize"
+                          style={{ left: `${(dispTrimEnd / corteDuration) * 100}%` }}
+                        >
+                          <div className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 bg-emerald-400" />
+                          <div className="absolute top-1/2 left-1/2 h-9 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-400 shadow-md transition group-hover:h-11" />
+                          <span className="absolute -top-5 left-1/2 -translate-x-1/2 rounded bg-emerald-400 px-1.5 py-0.5 text-[9px] font-mono font-bold text-black opacity-0 transition group-hover:opacity-100 whitespace-nowrap">
+                            {formatTime(dispTrimEnd)}
+                          </span>
+                        </div>
+
+                        {/* Playhead */}
+                        <div
+                          className="absolute inset-y-0 z-30 w-px bg-white/90 pointer-events-none"
+                          style={{ left: `${(currentTime / corteDuration) * 100}%` }}
+                        >
+                          <div className="h-0 w-0 border-x-[4px] border-x-transparent border-t-[6px] border-t-white -ml-[3.5px]" />
+                        </div>
                       </div>
                     </div>
                   </div>
 
-                  {/* Banner */}
-                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-[#0a0a0a] p-3 border border-[#262626] text-xs text-[#a8a8a8]">
-                    <span>💡 Clique em qualquer bloco de vídeo para ativar ou desativar o corte automático.</span>
+                  {/* Rodapé */}
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                    <span className="text-[11px] text-[#6b6b6b]">
+                      Arraste as <b className="font-semibold text-emerald-400">alças</b> pra definir início e fim · clique num bloco pra remover um trecho
+                    </span>
                     <button onClick={() => setActiveTab("estilo")} className="btn-primary btn-pill text-xs font-bold">
-                      Aprovar Corte & Ir para Estilo →
+                      Aprovar &amp; ir para Estilo →
                     </button>
                   </div>
                 </div>
@@ -1024,7 +1142,7 @@ export default function EditorPage({
 
                     <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
                       {localTranscript.map((seg, i) => (
-                        <div key={i} className="rounded-xl border border-[#262626] bg-[#0a0a0a]/60 p-3 hover:border-emerald-500/30">
+                        <div key={i} className="rounded-xl border border-[#242424] bg-[#0a0a0a]/60 p-3 hover:border-emerald-500/30">
                           <div className="mb-1 flex items-center justify-between text-[10px] text-[#737373]">
                             <span onClick={() => handleSeek(seg.start)} className="cursor-pointer text-emerald-400 hover:underline">
                               {formatTime(seg.start)} → {formatTime(seg.end)}
@@ -1035,7 +1153,7 @@ export default function EditorPage({
                             type="text"
                             value={seg.text}
                             onChange={(e) => handleTranscriptTextChange(i, e.target.value)}
-                            className="w-full rounded-lg border border-[#262626] bg-[#171717] px-3 py-1.5 text-sm text-[#fafafa] focus:border-emerald-400 focus:outline-none"
+                            className="w-full rounded-lg border border-[#242424] bg-[#141414] px-3 py-1.5 text-sm text-[#fafafa] focus:border-emerald-400 focus:outline-none"
                           />
                         </div>
                       ))}
@@ -1055,7 +1173,7 @@ export default function EditorPage({
 
                 {/* 1. TIPO DE EDIÇÃO */}
                 <div className="space-y-3">
-                  <label className="text-xs font-bold uppercase tracking-wider text-emerald-400">TIPO DE EDIÇÃO</label>
+                  <label className="text-[13px] font-semibold text-[#ededed]">Tipo de edição</label>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     {[
                       { id: "fullscreen", title: "Limpinho", desc: "Vídeo único 1080x1920 tela cheia", icon: "📱" },
@@ -1070,8 +1188,8 @@ export default function EditorPage({
                         }}
                         className={`group relative cursor-pointer rounded-2xl border p-5 transition-all ${
                           (style.layout === "fullscreen" && t.id === "fullscreen") || (style.layout === "split_screen" && t.id !== "fullscreen")
-                            ? "border-emerald-400 bg-emerald-500/10 shadow-lg shadow-emerald-500/10 scale-[1.02]"
-                            : "border-[#262626] bg-[#171717] hover:border-[#404040]"
+                            ? "border-emerald-400 bg-emerald-500/10"
+                            : "border-[#242424] bg-[#141414] hover:border-[#404040]"
                         }`}
                       >
                         <div className="mb-3 text-3xl">{t.icon}</div>
@@ -1088,7 +1206,7 @@ export default function EditorPage({
                   <input ref={splitInputRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={handleSplitImagesUpload} />
 
                   {style.layout === "split_screen" && (
-                    <div className="mt-3 rounded-2xl border border-[#262626] bg-[#171717] p-4 space-y-4">
+                    <div className="mt-3 rounded-2xl border border-[#242424] bg-[#141414] p-4 space-y-4">
                       {/* Sliders para enquadramento Y superior e inferior */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
@@ -1123,26 +1241,30 @@ export default function EditorPage({
                       </div>
 
                       {/* Painel Interativo de Sugestões de B-Roll da IA */}
-                      <div className="pt-3 border-t border-[#262626] space-y-3">
+                      <div className="pt-3 border-t border-[#242424] space-y-3">
                         <div className="flex items-center justify-between">
                           <div>
-                            <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">🎬 Sugestões de B-Roll IA</span>
+                            <span className="text-xs font-semibold text-[#ededed]">🎬 Sugestões de B-Roll IA</span>
                             <p className="text-[10px] text-slate-400 font-geist">Escolha mídias temáticas para os momentos chave do vídeo</p>
                           </div>
-                          <button onClick={handleFetchSuggestions} disabled={loadingSuggestions} className="shiny-cta px-3 py-1.5 text-xs font-bold whitespace-nowrap">
-                            <span className="shiny-cta-content text-white">{loadingSuggestions ? "🔄 Analisando..." : "🤖 Sugerir B-Rolls IA"}</span>
+                          <button
+                            onClick={handleFetchSuggestions}
+                            disabled={loadingSuggestions}
+                            className="whitespace-nowrap rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-60"
+                          >
+                            {loadingSuggestions ? "🔄 Analisando…" : "🤖 Sugerir B-Rolls IA"}
                           </button>
                         </div>
 
                         {brollSuggestions.length > 0 && (
                           <div className="space-y-3 pt-2">
                             {brollSuggestions.map((sugg) => (
-                              <div key={sugg.id} className="rounded-xl border border-[#262626] bg-[#0a0a0a] p-3 space-y-2">
+                              <div key={sugg.id} className="rounded-xl border border-[#242424] bg-[#0a0a0a] p-3 space-y-2">
                                 <div className="flex items-center justify-between text-xs">
                                   <span className="font-mono font-bold text-emerald-400">⏱️ {formatTime(sugg.start)} - {formatTime(sugg.end)}</span>
                                   <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-md font-bold">{sugg.keyword}</span>
                                 </div>
-                                <p className="text-xs text-slate-300 italic bg-[#171717] p-2 rounded-lg border border-[#262626]">"{sugg.context_text}"</p>
+                                <p className="text-xs text-slate-300 italic bg-[#141414] p-2 rounded-lg border border-[#242424]">"{sugg.context_text}"</p>
 
                                 {/* Opções de Mídias */}
                                 <div className="grid grid-cols-3 gap-2 pt-1">
@@ -1151,7 +1273,7 @@ export default function EditorPage({
                                       key={idx}
                                       onClick={() => handleActionSuggestion(sugg.id, opt.url, "accept")}
                                       className={`group relative cursor-pointer overflow-hidden rounded-lg border transition-all ${
-                                        sugg.accepted_url === opt.url ? "border-emerald-400 ring-2 ring-emerald-500/40" : "border-[#262626] hover:border-emerald-500/50"
+                                        sugg.accepted_url === opt.url ? "border-emerald-400 ring-2 ring-emerald-500/40" : "border-[#242424] hover:border-emerald-500/50"
                                       }`}
                                     >
                                       <img src={opt.thumbnail} alt={opt.title} className="h-16 w-full object-cover group-hover:scale-105 transition-transform" />
@@ -1181,8 +1303,8 @@ export default function EditorPage({
 
                 {/* 2. COR DE DESTAQUE */}
                 <div className="space-y-3">
-                  <label className="text-xs font-bold uppercase tracking-wider text-emerald-400">COR DE DESTAQUE</label>
-                  <div className="flex items-center gap-4 rounded-2xl border border-[#262626] bg-[#171717] p-4">
+                  <label className="text-[13px] font-semibold text-[#ededed]">Cor de destaque</label>
+                  <div className="flex items-center gap-4 rounded-2xl border border-[#242424] bg-[#141414] p-4">
                     <div className="flex items-center gap-3">
                       <input
                         type="color"
@@ -1191,7 +1313,7 @@ export default function EditorPage({
                           setHighlightColor(e.target.value);
                           updateStyleAndPersist((s) => ({ ...s, subtitle_color: e.target.value }));
                         }}
-                        className="h-10 w-10 cursor-pointer rounded-xl border border-[#262626] bg-transparent p-0.5"
+                        className="h-10 w-10 cursor-pointer rounded-xl border border-[#242424] bg-transparent p-0.5"
                       />
                       <div>
                         <span className="block text-[11px] font-medium text-[#a8a8a8]">Seletor Geral de Cor:</span>
@@ -1205,7 +1327,7 @@ export default function EditorPage({
 
                 {/* 4. ESTILO DE LEGENDA */}
                 <div className="space-y-3">
-                  <label className="text-xs font-bold uppercase tracking-wider text-emerald-400">ESTILO DE LEGENDA</label>
+                  <label className="text-[13px] font-semibold text-[#ededed]">Estilo de legenda</label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     {[
                       { key: "andromeda" as SubtitleTheme, label: "⬛ Andromeda", bg: "bg-black text-white" },
@@ -1218,8 +1340,8 @@ export default function EditorPage({
                         onClick={() => applyPresetTheme(p.key)}
                         className={`cursor-pointer rounded-2xl border p-4 transition-all text-center ${
                           style.subtitle_theme === p.key
-                            ? "border-emerald-400 bg-emerald-500/10 shadow-lg shadow-emerald-500/10 scale-[1.02]"
-                            : "border-[#262626] bg-[#171717] hover:border-[#404040]"
+                            ? "border-emerald-400 bg-emerald-500/10"
+                            : "border-[#242424] bg-[#141414] hover:border-[#404040]"
                         }`}
                       >
                         <div className={`mx-auto rounded-xl p-3 text-xs font-bold ${p.bg}`}>
@@ -1233,7 +1355,7 @@ export default function EditorPage({
 
                 {/* 5. ELEMENTOS DA EDIÇÃO */}
                 <div className="space-y-3">
-                  <label className="text-xs font-bold uppercase tracking-wider text-emerald-400">ELEMENTOS DA EDIÇÃO</label>
+                  <label className="text-[13px] font-semibold text-[#ededed]">Elementos da edição</label>
                   <div className="flex flex-wrap items-center gap-3">
                     {[
                       {
@@ -1266,8 +1388,8 @@ export default function EditorPage({
                         onClick={item.toggle}
                         className={`flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-xs font-bold transition-all ${
                           item.active
-                            ? "border-emerald-400 bg-emerald-500/10 text-emerald-300 shadow-lg shadow-emerald-500/10"
-                            : "border-[#262626] bg-[#171717] text-[#a8a8a8] hover:text-white"
+                            ? "border-emerald-400 bg-emerald-500/10 text-emerald-300"
+                            : "border-[#242424] bg-[#141414] text-[#a8a8a8] hover:text-white"
                         }`}
                       >
                         <span className={`flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold ${item.active ? "bg-emerald-400 text-[#0a0a0a]" : "bg-white/10 text-slate-500"}`}>
@@ -1280,8 +1402,8 @@ export default function EditorPage({
                 </div>
 
                 {/* 6. CONTROLES RIGOROSOS DE TEXTO E ANIMAÇÃO */}
-                <div className="rounded-2xl border border-[#262626] bg-[#171717] p-6 space-y-5">
-                  <label className="text-xs font-bold uppercase tracking-wider text-emerald-400">CONTROLES DE LEGENDA & TIPOGRAFIA LIMPA</label>
+                <div className="rounded-2xl border border-[#242424] bg-[#141414] p-6 space-y-5">
+                  <label className="text-[13px] font-semibold text-[#ededed]">Legenda & tipografia</label>
                   
                   {/* Fonte Tipográfica Limpa */}
                   <div>
@@ -1298,8 +1420,8 @@ export default function EditorPage({
                           onClick={() => updateStyleAndPersist((s) => ({ ...s, subtitle_font: f.name as any }))}
                           className={`rounded-xl border py-2.5 px-3 text-xs font-bold transition ${
                             style.subtitle_font === f.name
-                              ? "border-emerald-400 bg-emerald-500/20 text-emerald-300 shadow-md shadow-emerald-500/10"
-                              : "border-[#262626] bg-[#0a0a0a] text-[#a8a8a8] hover:text-white"
+                              ? "border-emerald-400 bg-emerald-500/20 text-emerald-300"
+                              : "border-[#242424] bg-[#0a0a0a] text-[#a8a8a8] hover:text-white"
                           }`}
                         >
                           {f.label}
@@ -1324,7 +1446,7 @@ export default function EditorPage({
                           className={`rounded-xl border py-2 px-3 text-xs font-bold transition ${
                             style.subtitle_animated && (style.subtitle_animation_style || "bounce_yellow") === anim.id
                               ? "border-emerald-400 bg-emerald-500/20 text-emerald-300"
-                              : "border-[#262626] bg-[#0a0a0a] text-[#a8a8a8] hover:text-white"
+                              : "border-[#242424] bg-[#0a0a0a] text-[#a8a8a8] hover:text-white"
                           }`}
                         >
                           {anim.label}
@@ -1334,9 +1456,9 @@ export default function EditorPage({
                   </div>
 
                   {/* Controles de Traçado (Stroke) e Sombra Projetada */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-[#262626]">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-[#242424]">
                     {/* Painel de Traçado (Outline) */}
-                    <div className="space-y-3 rounded-xl bg-[#0a0a0a] p-4 border border-[#262626]">
+                    <div className="space-y-3 rounded-xl bg-[#0a0a0a] p-4 border border-[#242424]">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-white">✍️ Traçado (Contorno das Letras)</span>
                         <button
@@ -1363,7 +1485,7 @@ export default function EditorPage({
                             className={`flex-1 rounded-lg border py-1 px-1 text-[10px] font-bold transition ${
                               (style.subtitle_outline_enabled === p.enable && (!p.enable || (style.subtitle_outline_width || 2) === p.width))
                                 ? "border-emerald-400 bg-emerald-500/20 text-emerald-300"
-                                : "border-[#262626] bg-[#171717] text-[#737373] hover:text-white"
+                                : "border-[#242424] bg-[#141414] text-[#737373] hover:text-white"
                             }`}
                           >
                             {p.label}
@@ -1372,7 +1494,7 @@ export default function EditorPage({
                       </div>
 
                       {style.subtitle_outline_enabled && (
-                        <div className="space-y-3 pt-2 border-t border-[#262626]">
+                        <div className="space-y-3 pt-2 border-t border-[#242424]">
                           <div className="flex items-center justify-between">
                             <span className="text-[11px] text-[#a8a8a8]">Espessura Fina:</span>
                             <span className="font-mono text-xs font-bold text-emerald-400">{style.subtitle_outline_width || 2}px</span>
@@ -1393,7 +1515,7 @@ export default function EditorPage({
                               type="color"
                               value={style.subtitle_outline_color || "#000000"}
                               onChange={(e) => updateStyleAndPersist((s) => ({ ...s, subtitle_outline_color: e.target.value }))}
-                              className="h-7 w-12 cursor-pointer rounded border border-[#262626] bg-transparent p-0"
+                              className="h-7 w-12 cursor-pointer rounded border border-[#242424] bg-transparent p-0"
                             />
                           </div>
                         </div>
@@ -1401,7 +1523,7 @@ export default function EditorPage({
                     </div>
 
                     {/* Painel de Sombra Projetada (Drop Shadow) */}
-                    <div className="space-y-3 rounded-xl bg-[#0a0a0a] p-4 border border-[#262626]">
+                    <div className="space-y-3 rounded-xl bg-[#0a0a0a] p-4 border border-[#242424]">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-white">🌓 Sombra Projetada (Drop Shadow)</span>
                         <button
@@ -1428,7 +1550,7 @@ export default function EditorPage({
                             className={`flex-1 rounded-lg border py-1 px-1 text-[10px] font-bold transition ${
                               (style.subtitle_shadow_enabled === p.enable && (!p.enable || (style.subtitle_shadow_offset || 4) === p.offset))
                                 ? "border-emerald-400 bg-emerald-500/20 text-emerald-300"
-                                : "border-[#262626] bg-[#171717] text-[#737373] hover:text-white"
+                                : "border-[#242424] bg-[#141414] text-[#737373] hover:text-white"
                             }`}
                           >
                             {p.label}
@@ -1437,7 +1559,7 @@ export default function EditorPage({
                       </div>
 
                       {style.subtitle_shadow_enabled && (
-                        <div className="space-y-3 pt-2 border-t border-[#262626]">
+                        <div className="space-y-3 pt-2 border-t border-[#242424]">
                           <div className="flex items-center justify-between">
                             <span className="text-[11px] text-[#a8a8a8]">Intensidade/Deslocamento:</span>
                             <span className="font-mono text-xs font-bold text-emerald-400">{style.subtitle_shadow_offset || 4}px</span>
@@ -1458,7 +1580,7 @@ export default function EditorPage({
                               type="color"
                               value={style.subtitle_shadow_color || "#000000"}
                               onChange={(e) => updateStyleAndPersist((s) => ({ ...s, subtitle_shadow_color: e.target.value }))}
-                              className="h-7 w-12 cursor-pointer rounded border border-[#262626] bg-transparent p-0"
+                              className="h-7 w-12 cursor-pointer rounded border border-[#242424] bg-transparent p-0"
                             />
                           </div>
                         </div>
@@ -1477,7 +1599,7 @@ export default function EditorPage({
                             className={`rounded-xl border py-2 text-xs font-bold transition ${
                               style.subtitle_max_lines === lines
                                 ? "border-emerald-400 bg-emerald-500/20 text-emerald-300"
-                                : "border-[#262626] bg-[#0a0a0a] text-[#a8a8a8] hover:text-white"
+                                : "border-[#242424] bg-[#0a0a0a] text-[#a8a8a8] hover:text-white"
                             }`}
                           >
                             {lines} {lines === 1 ? "Linha (Exata)" : "Linhas (Máx 2)"}
@@ -1534,9 +1656,9 @@ export default function EditorPage({
                 </div>
 
                 {/* 7. PAINEL PROFISSIONAL DE COLOR GRADING */}
-                <div className="rounded-2xl border border-[#262626] bg-[#171717] p-6 space-y-4">
+                <div className="rounded-2xl border border-[#242424] bg-[#141414] p-6 space-y-4">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold uppercase tracking-wider text-emerald-400">🎨 COLOR GRADING & TRATAMENTO DE IMAGEM</label>
+                    <label className="text-[13px] font-semibold text-[#ededed]">🎨 Color grading & imagem</label>
                     <div className="flex gap-2">
                       {[
                         { label: "Vívido", grade: { contrast: 1.25, saturation: 1.35, brightness: 1.05, warmth: 0.0 } },
@@ -1549,7 +1671,7 @@ export default function EditorPage({
                           onClick={() => {
                             Object.entries(preset.grade).forEach(([k, v]) => handleGradeChange(k as any, v));
                           }}
-                          className="rounded-lg border border-[#262626] bg-[#0a0a0a] px-2.5 py-1 text-[11px] font-bold text-[#a8a8a8] hover:text-emerald-300"
+                          className="rounded-lg border border-[#242424] bg-[#0a0a0a] px-2.5 py-1 text-[11px] font-bold text-[#a8a8a8] hover:text-emerald-300"
                         >
                           {preset.label}
                         </button>
@@ -1657,9 +1779,9 @@ export default function EditorPage({
                 </div>
 
                 {/* 8. ADAPTAÇÃO DE FORMATO DE VÍDEO & SELEÇÃO DE EXPORTAÇÃO MULTI-FORMATO */}
-                <div className="rounded-2xl border border-[#262626] bg-[#171717] p-6 space-y-4">
+                <div className="rounded-2xl border border-[#242424] bg-[#141414] p-6 space-y-4">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold uppercase tracking-wider text-emerald-400">📐 ADAPTAÇÃO DE FORMATOS DE VÍDEO</label>
+                    <label className="text-[13px] font-semibold text-[#ededed]">📐 Formatos de exportação</label>
                     <span className="text-[11px] text-[#a8a8a8]">Marque os formatos que deseja exportar</span>
                   </div>
 
@@ -1682,8 +1804,8 @@ export default function EditorPage({
                           }}
                           className={`cursor-pointer rounded-2xl border p-4 text-left transition-all ${
                             isSelected
-                              ? "border-emerald-400 bg-emerald-500/10 shadow-lg shadow-emerald-500/10 scale-[1.02]"
-                              : "border-[#262626] bg-[#0a0a0a] text-[#a8a8a8] hover:text-white"
+                              ? "border-emerald-400 bg-emerald-500/10"
+                              : "border-[#242424] bg-[#0a0a0a] text-[#a8a8a8] hover:text-white"
                           }`}
                         >
                           <div className="flex items-center justify-between mb-1">
@@ -1699,10 +1821,9 @@ export default function EditorPage({
                   </div>
                 </div>
 
-                <div className="flex justify-end gap-3 pt-4 border-t border-[#262626]">
-                  <button onClick={() => setActiveTab("visual")} className="shiny-cta px-8 py-3 text-xs font-bold">
-                    <span className="shiny-dots" aria-hidden="true" />
-                    <span className="shiny-cta-content text-white">Aprovar Estilo & Ir para Exportar →</span>
+                <div className="flex justify-end gap-3 pt-4 border-t border-[#242424]">
+                  <button onClick={() => setActiveTab("visual")} className="btn-primary btn-pill px-8 py-3 text-xs font-bold">
+                    Aprovar Estilo &amp; ir para Exportar →
                   </button>
                 </div>
               </div>
@@ -1711,13 +1832,13 @@ export default function EditorPage({
             {/* 🎬 FASE 3 — VISUAL & EXPORTAR TAB */}
             {activeTab === "visual" && (
               <div className="space-y-6 animate-in">
-                <div className="rounded-2xl border border-[#262626] bg-[#171717] p-6 space-y-5 shadow-2xl">
+                <div className="rounded-2xl border border-[#242424] bg-[#141414] p-6 space-y-5">
                   <h3 className="text-lg font-bold text-white">🎬 Exportação Final</h3>
                   <p className="text-xs text-[#a8a8a8]">
                     Revise todas as configurações e gere seu vídeo final de alta conversão.
                   </p>
 
-                  <div className="space-y-2.5 rounded-xl bg-[#0a0a0a] p-4 border border-[#262626] text-xs text-[#a8a8a8]">
+                  <div className="space-y-2.5 rounded-xl bg-[#0a0a0a] p-4 border border-[#242424] text-xs text-[#a8a8a8]">
                     <div className="flex justify-between">
                       <span>Layout:</span>
                       <span className="font-bold text-emerald-400">{style.layout === "fullscreen" ? "Tela Cheia 1080x1920" : "Split 50/50"}</span>
@@ -1752,22 +1873,19 @@ export default function EditorPage({
                       setIsRendering(false);
                     }}
                     disabled={!isCleanReady || isRendering}
-                    className="shiny-cta w-full py-4 text-base font-bold"
+                    className="w-full rounded-xl bg-emerald-500 py-4 text-base font-bold text-black transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <span className="shiny-dots" aria-hidden="true" />
-                    <span className="shiny-cta-content text-white">
-                      {isRendering
-                        ? "⚡ Renderizando Vídeos em Lote..."
-                        : `🚀 Exportar Todos os Formatos (${selectedExportFormats.length}) em Lote →`}
-                    </span>
+                    {isRendering
+                      ? "⚡ Renderizando vídeos em lote…"
+                      : `Exportar todos os formatos (${selectedExportFormats.length}) →`}
                   </button>
 
                   {renderError && <p className="text-xs text-rose-400">⚠️ {renderError}</p>}
 
                   {/* Batch Download Cards */}
                   {job.batch_videos && Object.keys(job.batch_videos).length > 0 && (
-                    <div className="space-y-3 pt-3 border-t border-[#262626]">
-                      <span className="block text-xs font-bold text-emerald-400 uppercase tracking-wider">
+                    <div className="space-y-3 pt-3 border-t border-[#242424]">
+                      <span className="block text-xs font-semibold text-[#ededed]">
                         ✅ Formatos Renderizados Prontos para Download:
                       </span>
 
@@ -1790,7 +1908,7 @@ export default function EditorPage({
                       {job.batch_zip_url && (
                         <button
                           onClick={() => downloadFile(getDownloadUrl(jobId, "export_batch.zip"), "editu_videos_lote.zip")}
-                          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-gradient py-3.5 text-sm font-extrabold text-[#0a0a0a] shadow-xl hover:opacity-90 transition mt-2"
+                          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-gradient py-3.5 text-sm font-extrabold text-[#0a0a0a] hover:opacity-90 transition mt-2"
                         >
                           📦 Baixar Pacote Completo ZIP (.zip)
                         </button>
@@ -1803,7 +1921,7 @@ export default function EditorPage({
                     <button
                       onClick={() => downloadFile(getDownloadUrl(jobId, job.final_video_url?.split("/").pop() || "final_video.mp4"), "editu_video_final.mp4")}
                       data-testid="download-final"
-                      className="flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-gradient py-3.5 text-sm font-extrabold text-[#0a0a0a] shadow-xl hover:opacity-90 transition"
+                      className="flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-gradient py-3.5 text-sm font-extrabold text-[#0a0a0a] hover:opacity-90 transition"
                     >
                       ⬇️ Baixar Vídeo Final MP4
                     </button>
@@ -1815,7 +1933,7 @@ export default function EditorPage({
 
           {/* ═══════════ RIGHT COLUMN: PLAYER DE PRÉVIA 9:16 PERMANENTE EM TODAS AS FASES ═══════════ */}
           <div className="sticky top-16 space-y-3">
-            <div className="glass-panel overflow-hidden p-3 flex flex-col items-center justify-center shadow-2xl max-h-[calc(100vh-100px)]">
+            <div className="glass-panel overflow-hidden p-3 flex flex-col items-center justify-center max-h-[calc(100vh-100px)]">
               <div className="mb-2 w-full flex items-center justify-between text-[11px] text-[#a8a8a8]">
                 <span>📱 Prévia Ao Vivo 9:16</span>
                 <span className="text-emerald-400 font-bold">
@@ -1826,7 +1944,7 @@ export default function EditorPage({
               <div
                 ref={videoContainerRef}
                 onMouseMove={handleContainerMouseMove}
-                className={`relative mx-auto max-h-[calc(100vh-160px)] w-auto overflow-hidden rounded-[1.75rem] bg-black shadow-2xl select-none border border-white/10 transition-all ${
+                className={`relative mx-auto max-h-[calc(100vh-160px)] w-auto overflow-hidden rounded-[1.75rem] bg-black select-none border border-white/10 transition-all ${
                   (style.aspect_ratio || "9:16") === "4:5"
                     ? "aspect-[4/5] h-[420px]"
                     : (style.aspect_ratio || "9:16") === "1:1"
@@ -1841,7 +1959,7 @@ export default function EditorPage({
                 {style.layout === "split_screen" ? (
                   <div className="flex h-full w-full flex-col">
                     {/* Top Media */}
-                    <div className="relative h-1/2 w-full overflow-hidden bg-[#171717]">
+                    <div className="relative h-1/2 w-full overflow-hidden bg-[#141414]">
                       {activeSplitUrl ? (
                         isTopMediaVideo ? (
                           <video
