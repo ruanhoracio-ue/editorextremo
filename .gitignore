@@ -13,8 +13,9 @@ dist/
 *.tsbuildinfo
 
 # Storage & Cache
-storage/
-backend/storage/
+/storage/
+/backend/storage/
+!backend/app/storage/
 __pycache__/
 *.py[cod]
 
