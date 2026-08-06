@@ -2,6 +2,21 @@
 
 Web app que automatiza a edição de vídeos curtos (Reels/Shorts/depoimentos).
 
+## 🎬 Para alunos / uso simples (Docker)
+
+Se você só quer **usar** o app (sem instalar Node, Python e FFmpeg na mão),
+use a versão empacotada em Docker — funciona em **Windows e Mac** com duplo
+clique. Passo a passo completo para leigos em **[`GUIA-ALUNO.md`](GUIA-ALUNO.md)**.
+
+Resumo: instale o **Docker Desktop** (uma vez) e depois abra o atalho
+`Editu.command` (Mac) ou `Editu.bat` (Windows). O app abre em
+`http://localhost:3000`. Para desligar, use `Parar-Editu`.
+
+**Vai distribuir para uma turma?** Veja **[`DISTRIBUIR.md`](DISTRIBUIR.md)**
+(como gerar o ZIP e entregar aos alunos).
+
+O restante desta página é o setup **manual/desenvolvimento**.
+
 ## Requisitos do Sistema
 
 - **Node.js** 18+ (instalado: v24)
