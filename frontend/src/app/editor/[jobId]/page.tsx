@@ -58,6 +58,7 @@ export default function EditorPage({
   const topVideoRef = useRef<HTMLVideoElement>(null);
   const gradeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const transcriptTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cutTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const splitInputRef = useRef<HTMLInputElement>(null);
   const userTouchedStyle = useRef(false);
 
@@ -248,21 +249,100 @@ export default function EditorPage({
     setIsRendering(false);
   };
 
+  const handleUpdateCutSegment = useCallback(
+    (updatedCuts: CutSegment[]) => {
+      setLocalCuts(updatedCuts);
+      setIsReprocessing(true);
+
+      if (cutTimer.current) clearTimeout(cutTimer.current);
+      cutTimer.current = setTimeout(async () => {
+        try {
+          await updateCuts(jobId, updatedCuts);
+        } catch {
+          setIsReprocessing(false);
+        }
+      }, 700);
+    },
+    [jobId]
+  );
+
   const handleToggleCut = useCallback(
     async (index: number) => {
       const updated = localCuts.map((c, i) =>
         i === index ? { ...c, enabled: !c.enabled } : c
       );
-      setLocalCuts(updated);
-      setIsReprocessing(true);
-      try {
-        await updateCuts(jobId, updated);
-      } catch {
-        setIsReprocessing(false);
-      }
+      handleUpdateCutSegment(updated);
     },
-    [localCuts, jobId]
+    [localCuts, handleUpdateCutSegment]
   );
+
+  const handleSegmentTimeChange = useCallback(
+    (index: number, field: "start" | "end", val: number) => {
+      if (localCuts.length === 0) return;
+      const newCuts = localCuts.map((c) => ({ ...c }));
+      const seg = newCuts[index];
+      if (!seg) return;
+
+      const maxDuration = job?.original_duration || job?.clean_duration || 1;
+
+      if (field === "start") {
+        const minStart = index > 0 ? newCuts[index - 1].end : 0;
+        const maxStart = seg.end - 0.1;
+        const clamped = Math.max(minStart, Math.min(val, maxStart));
+        newCuts[index].start = Math.round(clamped * 100) / 100;
+      } else {
+        const minEnd = seg.start + 0.1;
+        const maxEnd = index < newCuts.length - 1 ? newCuts[index + 1].start : maxDuration;
+        const clamped = Math.max(minEnd, Math.min(val, maxEnd));
+        newCuts[index].end = Math.round(clamped * 100) / 100;
+      }
+      handleUpdateCutSegment(newCuts);
+    },
+    [localCuts, job?.original_duration, job?.clean_duration, handleUpdateCutSegment]
+  );
+
+  const setStartAtCurrentTime = () => {
+    if (localCuts.length === 0) return;
+    const newStart = Math.max(0, Math.min(currentTime, (localCuts[0]?.end || 1) - 0.1));
+    handleSegmentTimeChange(0, "start", newStart);
+  };
+
+  const setEndAtCurrentTime = () => {
+    if (localCuts.length === 0) return;
+    const lastIdx = localCuts.length - 1;
+    const maxDur = job?.original_duration || job?.clean_duration || 1;
+    const newEnd = Math.min(maxDur, Math.max((localCuts[lastIdx]?.start || 0) + 0.1, currentTime));
+    handleSegmentTimeChange(lastIdx, "end", newEnd);
+  };
+
+  const handleAddManualCut = () => {
+    const maxDur = job?.original_duration || job?.clean_duration || 1;
+    if (localCuts.length === 0) {
+      handleUpdateCutSegment([{ start: 0, end: maxDur, enabled: true }]);
+      return;
+    }
+    const targetIdx = localCuts.findIndex((c) => currentTime >= c.start && currentTime <= c.end);
+    if (targetIdx !== -1) {
+      const seg = localCuts[targetIdx];
+      if (currentTime > seg.start + 0.2 && currentTime < seg.end - 0.2) {
+        const seg1: CutSegment = { start: seg.start, end: Math.round(currentTime * 100) / 100, enabled: true };
+        const seg2: CutSegment = { start: Math.round(currentTime * 100) / 100, end: seg.end, enabled: true };
+        const updated = [
+          ...localCuts.slice(0, targetIdx),
+          seg1,
+          seg2,
+          ...localCuts.slice(targetIdx + 1),
+        ];
+        handleUpdateCutSegment(updated);
+      }
+    }
+  };
+
+  const handleRemoveCutSegment = (index: number) => {
+    if (localCuts.length <= 1) return;
+    const updated = localCuts.filter((_, i) => i !== index);
+    handleUpdateCutSegment(updated);
+  };
 
   const handleGradeChange = useCallback(
     (key: keyof ColorGradeOptions, value: number) => {
@@ -701,11 +781,149 @@ export default function EditorPage({
                   </div>
                 </div>
 
+                {/* ✂️ PAINEL DE CORTE MANUAL DO INÍCIO & FINAL */}
+                <div className="rounded-2xl border border-emerald-500/30 bg-[#171717] p-5 shadow-2xl space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#262626] pb-3">
+                    <div>
+                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                        <span>✂️</span> Corte Manual do Início & Final
+                      </h3>
+                      <p className="text-[11px] text-[#a8a8a8]">
+                        Ajuste com precisão onde o vídeo deve começar e terminar, ou use o tempo atual do player.
+                      </p>
+                    </div>
+                    {isReprocessing && (
+                      <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-300 animate-pulse">
+                        <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                        Reprocessando cortes...
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* CORTE INICIAL */}
+                    <div className="rounded-xl border border-[#262626] bg-[#0a0a0a] p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
+                          🟢 Início do Vídeo (Corte Inicial)
+                        </span>
+                        <span className="font-mono text-sm font-bold text-white">
+                          {localCuts[0] ? `${localCuts[0].start.toFixed(2)}s` : "0.00s"}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          max={localCuts[0] ? Math.max(0, localCuts[0].end - 0.1) : 100}
+                          value={localCuts[0] ? localCuts[0].start : 0}
+                          onChange={(e) => handleSegmentTimeChange(0, "start", parseFloat(e.target.value) || 0)}
+                          className="w-24 rounded-lg border border-[#262626] bg-[#171717] px-3 py-1.5 font-mono text-xs text-white focus:border-emerald-400 focus:outline-none"
+                        />
+                        <input
+                          type="range"
+                          min="0"
+                          max={localCuts[0] ? Math.max(0, localCuts[0].end - 0.1) : 100}
+                          step="0.05"
+                          value={localCuts[0] ? localCuts[0].start : 0}
+                          onChange={(e) => handleSegmentTimeChange(0, "start", parseFloat(e.target.value) || 0)}
+                          className="flex-1 accent-emerald-400 cursor-pointer"
+                        />
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <button
+                          onClick={() => handleSegmentTimeChange(0, "start", (localCuts[0]?.start || 0) - 0.5)}
+                          className="rounded-lg border border-[#262626] bg-[#171717] px-2.5 py-1 text-[11px] font-bold text-[#a8a8a8] hover:text-white hover:border-emerald-500/40"
+                        >
+                          -0.5s
+                        </button>
+                        <button
+                          onClick={() => handleSegmentTimeChange(0, "start", (localCuts[0]?.start || 0) + 0.5)}
+                          className="rounded-lg border border-[#262626] bg-[#171717] px-2.5 py-1 text-[11px] font-bold text-[#a8a8a8] hover:text-white hover:border-emerald-500/40"
+                        >
+                          +0.5s
+                        </button>
+                        <button
+                          onClick={setStartAtCurrentTime}
+                          className="shiny-cta px-3 py-1 text-[11px] font-bold text-white rounded-lg ml-auto"
+                        >
+                          <span className="shiny-cta-content">📍 Cortar Início no Player ({formatTime(currentTime)})</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* CORTE FINAL */}
+                    <div className="rounded-xl border border-[#262626] bg-[#0a0a0a] p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
+                          🔴 Fim do Vídeo (Corte Final)
+                        </span>
+                        <span className="font-mono text-sm font-bold text-white">
+                          {localCuts.length > 0 ? `${localCuts[localCuts.length - 1].end.toFixed(2)}s` : `${totalDuration.toFixed(2)}s`}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="number"
+                          step="0.1"
+                          min={localCuts.length > 0 ? localCuts[localCuts.length - 1].start + 0.1 : 0}
+                          max={job?.original_duration || totalDuration}
+                          value={localCuts.length > 0 ? localCuts[localCuts.length - 1].end : totalDuration}
+                          onChange={(e) => handleSegmentTimeChange(localCuts.length - 1, "end", parseFloat(e.target.value) || 0)}
+                          className="w-24 rounded-lg border border-[#262626] bg-[#171717] px-3 py-1.5 font-mono text-xs text-white focus:border-emerald-400 focus:outline-none"
+                        />
+                        <input
+                          type="range"
+                          min={localCuts.length > 0 ? localCuts[localCuts.length - 1].start + 0.1 : 0}
+                          max={job?.original_duration || totalDuration}
+                          step="0.05"
+                          value={localCuts.length > 0 ? localCuts[localCuts.length - 1].end : totalDuration}
+                          onChange={(e) => handleSegmentTimeChange(localCuts.length - 1, "end", parseFloat(e.target.value) || 0)}
+                          className="flex-1 accent-emerald-400 cursor-pointer"
+                        />
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <button
+                          onClick={() => handleSegmentTimeChange(localCuts.length - 1, "end", (localCuts[localCuts.length - 1]?.end || 0) - 0.5)}
+                          className="rounded-lg border border-[#262626] bg-[#171717] px-2.5 py-1 text-[11px] font-bold text-[#a8a8a8] hover:text-white hover:border-emerald-500/40"
+                        >
+                          -0.5s
+                        </button>
+                        <button
+                          onClick={() => handleSegmentTimeChange(localCuts.length - 1, "end", (localCuts[localCuts.length - 1]?.end || 0) + 0.5)}
+                          className="rounded-lg border border-[#262626] bg-[#171717] px-2.5 py-1 text-[11px] font-bold text-[#a8a8a8] hover:text-white hover:border-emerald-500/40"
+                        >
+                          +0.5s
+                        </button>
+                        <button
+                          onClick={setEndAtCurrentTime}
+                          className="shiny-cta px-3 py-1 text-[11px] font-bold text-white rounded-lg ml-auto"
+                        >
+                          <span className="shiny-cta-content">📍 Cortar Fim no Player ({formatTime(currentTime)})</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {/* TIMELINE PRO COM RULER, CUT BLOCKS E WAVEFORM AUDIO */}
                 <div className="rounded-2xl border border-[#262626] bg-[#171717] p-6 shadow-2xl overflow-hidden min-w-0 w-full">
                   <div className="mb-3 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-[#a8a8a8]">
                     <span>🎞️ Linha do Tempo & Cortes Inteligentes</span>
-                    <span className="text-emerald-400 font-mono">{formatDuration(totalDuration)} total</span>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={handleAddManualCut}
+                        className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-xs font-bold text-emerald-300 hover:bg-emerald-500/20"
+                      >
+                        ✂️ Split no Player ({formatTime(currentTime)})
+                      </button>
+                      <span className="text-emerald-400 font-mono">{formatDuration(totalDuration)} total</span>
+                    </div>
                   </div>
 
                   <div className="relative w-full overflow-x-auto select-none py-2 min-w-0">
@@ -741,12 +959,12 @@ export default function EditorPage({
                             >
                               <div className="flex items-center justify-between">
                                 <span className="rounded bg-black/70 px-1.5 py-0.5 text-[9px] font-extrabold tracking-wider text-emerald-400">
-                                  {badgeLabel}
+                                  {badgeLabel} #{i + 1}
                                 </span>
                                 <span className="text-[9px] font-mono text-slate-400">{(cut.end - cut.start).toFixed(1)}s</span>
                               </div>
                               <div className="text-[10px] font-bold text-white truncate">
-                                {localTranscript[i]?.text || "Segmento"}
+                                {localTranscript[i]?.text || `Segmento ${i + 1}`}
                               </div>
                             </div>
                           );
