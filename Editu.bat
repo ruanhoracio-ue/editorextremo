@@ -32,9 +32,29 @@ pause
 exit /b 1
 
 :ready
-REM 2) Sobe o app (na PRIMEIRA vez baixa/monta tudo e pode levar alguns minutos)
+REM 2) Limpa restos de execucoes anteriores (evita "container name already in use").
+REM    NAO perde nada: videos e modelo de IA ficam em volumes nomeados do Docker.
+docker rm -f editu-backend editu-frontend >nul 2>&1
+
+REM 3) Confere se as portas 3000 e 8000 estao livres (mensagem clara em vez do erro do Docker)
+set "PORTA="
+netstat -ano | findstr LISTENING | findstr /C:":3000 " >nul 2>&1 && set "PORTA=3000"
+netstat -ano | findstr LISTENING | findstr /C:":8000 " >nul 2>&1 && set "PORTA=8000"
+if defined PORTA (
+  echo.
+  echo  [ERRO] A porta %PORTA% ja esta sendo usada por outro programa neste computador.
+  echo         O Editu precisa das portas 3000 e 8000 livres.
+  echo.
+  echo         ^> Feche o outro programa que usa a porta %PORTA%
+  echo           ^(ou reinicie o computador^) e rode este atalho de novo.
+  echo.
+  pause
+  exit /b 1
+)
+
+REM 4) Sobe o app (na PRIMEIRA vez baixa/monta tudo e pode levar alguns minutos)
 echo  Preparando o app... (a PRIMEIRA vez demora alguns minutos - nas proximas e rapido)
-docker compose up -d --build
+docker compose up -d --build --remove-orphans
 if errorlevel 1 (
   echo.
   echo  [ERRO] Algo deu errado ao iniciar. Tire um print desta tela e envie para o suporte.
@@ -42,7 +62,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-REM 3) Abre no navegador
+REM 5) Abre no navegador
 echo  Tudo pronto! Abrindo o Editu no navegador...
 timeout /t 3 >nul
 start "" http://localhost:3000

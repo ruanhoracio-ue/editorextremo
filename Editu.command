@@ -26,15 +26,35 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
-# 2) Sobe o app (na PRIMEIRA vez baixa/monta tudo e pode levar alguns minutos)
+# 2) Limpa restos de execuções anteriores (evita "container name already in use").
+#    NÃO perde nada: os vídeos e o modelo de IA ficam em volumes nomeados do Docker.
+docker rm -f editu-backend editu-frontend >/dev/null 2>&1
+
+# 3) Confere se as portas 3000 e 8000 estão livres — se outro programa estiver
+#    usando, mostramos uma mensagem clara em vez do erro técnico do Docker.
+for PORT in 3000 8000; do
+  if lsof -iTCP:$PORT -sTCP:LISTEN -n -P >/dev/null 2>&1; then
+    echo
+    echo "❌  A porta $PORT já está sendo usada por outro programa neste computador."
+    echo "    O Editu precisa das portas 3000 e 8000 livres."
+    echo
+    echo "    ➜  Feche o outro programa que está usando a porta $PORT"
+    echo "       (ou simplesmente reinicie o computador) e rode este atalho de novo."
+    echo
+    read -p "Pressione ENTER para fechar."
+    exit 1
+  fi
+done
+
+# 4) Sobe o app (na PRIMEIRA vez baixa/monta tudo e pode levar alguns minutos)
 echo "⚙️   Preparando o app... (a PRIMEIRA vez demora alguns minutos — nas próximas é rápido)"
-docker compose up -d --build || {
+docker compose up -d --build --remove-orphans || {
   echo "❌  Algo deu errado ao iniciar. Tire um print desta tela e envie para o suporte."
   read -p "Pressione ENTER para fechar."
   exit 1
 }
 
-# 3) Abre no navegador
+# 5) Abre no navegador
 echo "✅  Tudo pronto! Abrindo o Editu no navegador..."
 sleep 3
 open http://localhost:3000
