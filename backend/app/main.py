@@ -81,8 +81,14 @@ async def serve_storage(file_path: str, request: Request):
     try:
         spec = range_header.split("=", 1)[1].split(",", 1)[0].strip()
         start_s, _, end_s = spec.partition("-")
-        start = int(start_s) if start_s else 0
-        end = int(end_s) if end_s else file_size - 1
+        if start_s == "":
+            # Range de sufixo ("bytes=-N"): últimos N bytes (Safari usa isso)
+            n = int(end_s)
+            start = max(0, file_size - n)
+            end = file_size - 1
+        else:
+            start = int(start_s)
+            end = int(end_s) if end_s else file_size - 1
     except ValueError:
         raise HTTPException(status_code=416, detail="Range inválido")
 

@@ -80,6 +80,14 @@ def render_final_video(
     aspect = getattr(style_options, "aspect_ratio", "9:16") or "9:16"
     canvas_w, canvas_h = _get_canvas_dimensions(aspect)
 
+    # --- Rotação do vídeo principal (0/90/180/270) — antes do scale/crop ---
+    rotation = int(getattr(style_options, "rotation", 0) or 0) % 360
+    rot_map = {90: "transpose=1", 180: "transpose=1,transpose=1", 270: "transpose=2"}
+    main_src = "[0:v]"
+    if rotation in rot_map:
+        filters.append(f"[0:v]{rot_map[rotation]}[vsrc]")
+        main_src = "[vsrc]"
+
     # --- Split Screen Layout (Clean 50/50 vertical stack with framing Y) ---
     if style_options.layout == "split_screen" and style_options.split_screen_image:
         img_path = style_options.split_screen_image
@@ -98,16 +106,16 @@ def render_final_video(
 
             filters.append(
                 f"[1:v]scale={canvas_w}:-1,crop={canvas_w}:{half_h}:0:'{crop_y_top}',setsar=1[top];"
-                f"[0:v]scale={canvas_w}:{half_h}:force_original_aspect_ratio=increase,crop={canvas_w}:{half_h}:0:'{crop_y_bot}',setsar=1[bot];"
+                f"{main_src}scale={canvas_w}:{half_h}:force_original_aspect_ratio=increase,crop={canvas_w}:{half_h}:0:'{crop_y_bot}',setsar=1[bot];"
                 f"[top][bot]vstack=inputs=2[base_canvas]"
             )
         else:
             filters.append(
-                f"[0:v]scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=increase,crop={canvas_w}:{canvas_h},setsar=1[base_canvas]"
+                f"{main_src}scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=increase,crop={canvas_w}:{canvas_h},setsar=1[base_canvas]"
             )
     else:
         filters.append(
-            f"[0:v]scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=increase,crop={canvas_w}:{canvas_h},setsar=1[base_canvas]"
+            f"{main_src}scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=increase,crop={canvas_w}:{canvas_h},setsar=1[base_canvas]"
         )
 
     # --- Dynamic Zoom Filter ---
@@ -200,9 +208,17 @@ def _simple_render(
     """Fallback render."""
     aspect = getattr(style_options, "aspect_ratio", "9:16") or "9:16"
     canvas_w, canvas_h = _get_canvas_dimensions(aspect)
-    vf_parts = [
+    vf_parts = []
+
+    # Rotação também no fallback
+    rotation = int(getattr(style_options, "rotation", 0) or 0) % 360
+    rot_map = {90: "transpose=1", 180: "transpose=1,transpose=1", 270: "transpose=2"}
+    if rotation in rot_map:
+        vf_parts.append(rot_map[rotation])
+
+    vf_parts.append(
         f"scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=increase,crop={canvas_w}:{canvas_h},setsar=1"
-    ]
+    )
 
     if style_options.subtitle_style == "basic" and transcript:
         ass_path = _generate_ass_subtitles(clean_video_path, transcript, style_options)
@@ -270,14 +286,14 @@ def _generate_ass_subtitles(
 
     primary_color = _hex_to_ass_color(style.subtitle_color)
 
-    # Karaoke animation secondary highlight color (ASS BGR)
+    # Karaoke: SecondaryColour = cor das palavras AINDA NÃO faladas (ASS BGR + alpha)
     anim_style = getattr(style, "subtitle_animation_style", "bounce_yellow")
-    if anim_style == "neon_cyan":
-        secondary_color = "&H00EEEE22"  # Neon Cyan
-    elif anim_style == "box_primary":
-        secondary_color = "&H0000FF00"  # Neon Green
+    if anim_style == "typewriter":
+        secondary_color = "&HFF000000"  # alpha FF = invisível até ser falada (efeito revelar)
+    elif anim_style == "spotlight":
+        secondary_color = "&H00707070"  # cinza apagado até "acender" na fala
     else:
-        secondary_color = "&H0015CAFA"  # Bright Yellow
+        secondary_color = "&H0015CAFA"  # amarelo (pop_flash / bounce_yellow)
 
     outline_color = _hex_to_ass_color(style.subtitle_outline_color)
 
@@ -285,7 +301,8 @@ def _generate_ass_subtitles(
     if style.subtitle_bg_color not in ("transparent", "none", ""):
         back_color = _hex_to_ass_color(style.subtitle_bg_color, "80")
     else:
-        back_color = _hex_to_ass_color(shadow_hex, "00")
+        # Sombra semi-transparente (alpha 50 ≈ 69% de opacidade) — sombra 100% chapada fica dura
+        back_color = _hex_to_ass_color(shadow_hex, "50")
 
     border_style = 1
     outline_w = getattr(style, "subtitle_outline_width", 2) if style.subtitle_outline_enabled else 0
@@ -344,7 +361,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         else:
             text = format_caption_text(seg.text, max_lines, max_chars, is_upper)
 
-        events.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{{\\pos({pos_x},{pos_y})}}{text}")
+        # \blur arredonda as bordas do traçado e difunde a sombra (visual mais suave)
+        blur_tag = "{\\blur1.5}" if (outline_w or shadow_d) else ""
+        events.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{{\\pos({pos_x},{pos_y})}}{blur_tag}{text}")
 
     ass_path.write_text(header + "\n".join(events), encoding="utf-8")
     return str(ass_path)

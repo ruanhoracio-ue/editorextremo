@@ -113,6 +113,8 @@ class StyleOptions(BaseModel):
     subtitle_animation_style: str = Field(default="bounce_yellow")
 
     aspect_ratio: str = Field(default="9:16")
+    # Rotação do vídeo em graus (0, 90, 180, 270) — aplicada no render final
+    rotation: int = Field(default=0)
 
     zoom_enabled: bool = True
     zoom_intensity: float = Field(default=1.15, ge=1.0, le=2.0)

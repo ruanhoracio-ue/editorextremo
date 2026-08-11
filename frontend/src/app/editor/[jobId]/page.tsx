@@ -53,6 +53,9 @@ export default function EditorPage({
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(0);
   const [dragKind, setDragKind] = useState<null | "start" | "end" | "playhead">(null);
+  // Bump a cada reprocessamento concluído — força o <video> a recarregar o clean_video
+  // novo do disco (sem isso o navegador toca o vídeo antigo em cache e a legenda "sai fora")
+  const [cleanVersion, setCleanVersion] = useState(0);
 
   const [isDraggingSub, setIsDraggingSub] = useState(false);
   const [copiedTx, setCopiedTx] = useState(false);
@@ -65,6 +68,10 @@ export default function EditorPage({
   const transcriptTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cutTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const splitInputRef = useRef<HTMLInputElement>(null);
+  // Scrub por arraste no preview (clique = play/pause, arraste horizontal = navegar)
+  const scrubRef = useRef<{ active: boolean; startX: number; startT: number; moved: boolean; wasPlaying: boolean }>({
+    active: false, startX: 0, startT: 0, moved: false, wasPlaying: false,
+  });
   // Refs espelhando o estado, pra os listeners de drag lerem sempre o valor mais recente
   const localCutsRef = useRef<CutSegment[]>([]);
   const trimStartRef = useRef(0);
@@ -104,10 +111,13 @@ export default function EditorPage({
     if (isJobFinished) {
       hasInitialSyncedFinishedJob.current = true;
       // Ao concluir um reprocessamento, o backend recalcula as marcações da transcrição
-      // (adjust_transcript_for_cuts) — só atualizamos a transcrição e liberamos o estado.
+      // (adjust_transcript_for_cuts) — atualizamos a transcrição, liberamos o estado e
+      // versionamos a URL do clean_video pro navegador recarregar o arquivo novo
+      // (sem isso ele toca o vídeo antigo em cache e a legenda dessincroniza).
       if (isReprocessing) {
         if (job.transcript) setLocalTranscript(job.transcript);
         setIsReprocessing(false);
+        setCleanVersion((v) => v + 1);
       }
     }
   }, [job, isReprocessing, localCuts.length, localTranscript.length]);
@@ -168,15 +178,38 @@ export default function EditorPage({
     }
   };
 
+  // Na aba de corte o preview toca o vídeo ORIGINAL, mas o transcript está em tempo
+  // do vídeo LIMPO (pós-corte). Mapeia original → limpo pra legenda não "sair fora"
+  // quando o usuário corta o início/fim.
+  const subtitleTime = (() => {
+    if (activeTab !== "corte" || !job?.original_video_url) return currentTime;
+    const ts = trimStart;
+    const te = trimEnd || job?.original_duration || Infinity;
+    let clean = 0;
+    for (const c of localCuts) {
+      if (!c.enabled) continue;
+      const s = Math.max(c.start, ts);
+      const e = Math.min(c.end, te);
+      if (e - s <= 0.05) continue;
+      if (currentTime >= e) {
+        clean += e - s;
+        continue;
+      }
+      if (currentTime > s) clean += currentTime - s;
+      break;
+    }
+    return clean;
+  })();
+
   // PRECISE SUBTITLE SYNC — find the segment whose word-level time range
-  // best covers currentTime. No artificial tolerances that cause overlapping matches.
+  // best covers subtitleTime. No artificial tolerances that cause overlapping matches.
   const activeSubIndex = (() => {
     let bestIdx = -1;
     let bestOverlap = -Infinity;
     for (let i = 0; i < localTranscript.length; i++) {
       const s = localTranscript[i];
-      // Exact match: currentTime falls within the segment's word boundaries
-      if (currentTime >= s.start && currentTime <= s.end) {
+      // Exact match: subtitleTime falls within the segment's word boundaries
+      if (subtitleTime >= s.start && subtitleTime <= s.end) {
         // Prefer the tightest match (smallest segment duration)
         const overlap = s.end - s.start;
         if (bestIdx === -1 || overlap < bestOverlap) {
@@ -190,7 +223,7 @@ export default function EditorPage({
     if (bestIdx === -1) {
       for (let i = 0; i < localTranscript.length; i++) {
         const s = localTranscript[i];
-        if (currentTime > s.end && currentTime <= s.end + 0.05) {
+        if (subtitleTime > s.end && subtitleTime <= s.end + 0.05) {
           bestIdx = i;
           break;
         }
@@ -255,6 +288,55 @@ export default function EditorPage({
   const handleMouseUp = () => {
     if (isDraggingSub) {
       setIsDraggingSub(false);
+    }
+  };
+
+  // ── Scrub por arraste no preview: clique = play/pause, arraste horizontal = navegar
+  const handleScrubDown = (e: React.PointerEvent) => {
+    if (!videoRef.current) return;
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      /* pointer capture é só conveniência — segue sem */
+    }
+    scrubRef.current = {
+      active: true,
+      startX: e.clientX,
+      startT: videoRef.current.currentTime,
+      moved: false,
+      wasPlaying: !videoRef.current.paused,
+    };
+  };
+
+  const handleScrubMove = (e: React.PointerEvent) => {
+    const s = scrubRef.current;
+    if (!s.active || !videoRef.current || !videoContainerRef.current) return;
+    const dx = e.clientX - s.startX;
+    if (!s.moved && Math.abs(dx) < 5) return;
+    const dur = videoRef.current.duration;
+    if (!dur || !isFinite(dur)) return;
+    if (!s.moved) {
+      s.moved = true;
+      videoRef.current.pause();
+      setIsPlaying(false);
+    }
+    // Arrastar a largura toda do preview = percorrer o vídeo inteiro
+    const width = videoContainerRef.current.getBoundingClientRect().width;
+    const nt = Math.max(0, Math.min(dur, s.startT + (dx / width) * dur));
+    videoRef.current.currentTime = nt;
+    if (topVideoRef.current) topVideoRef.current.currentTime = nt;
+    setCurrentTime(nt);
+  };
+
+  const handleScrubEnd = () => {
+    const s = scrubRef.current;
+    if (!s.active) return;
+    s.active = false;
+    if (!s.moved) {
+      togglePlayPause();
+    } else if (s.wasPlaying && videoRef.current) {
+      videoRef.current.play().catch(() => {});
+      setIsPlaying(true);
     }
   };
 
@@ -631,7 +713,7 @@ export default function EditorPage({
     let activeLineIdx = 0;
     for (let lIdx = 0; lIdx < linesOfWords.length; lIdx++) {
       const lineWords = linesOfWords[lIdx];
-      if (lineWords.some(w => currentTime >= w.start && currentTime <= w.end)) {
+      if (lineWords.some(w => subtitleTime >= w.start && subtitleTime <= w.end)) {
         activeLineIdx = lIdx;
         break;
       }
@@ -657,10 +739,10 @@ export default function EditorPage({
     const activeColorClass =
       animStyle === "pop_flash"
         ? "text-[#10b981] scale-125 animate-pulse drop-shadow-[0_0_15px_rgba(16,185,129,1)] font-extrabold"
-        : animStyle === "neon_cyan"
-        ? "text-emerald-300 drop-shadow-[0_2px_10px_rgba(16,185,129,0.9)] scale-110 font-bold"
-        : animStyle === "box_primary"
-        ? "text-emerald-300 drop-shadow-[0_2px_10px_rgba(52,211,153,0.9)] scale-110 font-black"
+        : animStyle === "typewriter"
+        ? "font-extrabold"
+        : animStyle === "spotlight"
+        ? "text-white scale-110 drop-shadow-[0_0_14px_rgba(255,255,255,0.95)] font-black"
         : "text-yellow-300 drop-shadow-[0_2px_10px_rgba(250,204,21,0.9)] scale-110 font-black";
 
     const displayLines = getDisplayLines(sub, maxChars, maxLines);
@@ -682,12 +764,24 @@ export default function EditorPage({
       return (
         <span key={`line-${lineIdx}`} className="block leading-snug">
           {(lineWords as { word: string; start: number; end: number }[]).map((wObj, wIdx) => {
-            const isWordActive = currentTime >= wObj.start && currentTime <= wObj.end;
+            const isWordActive = subtitleTime >= wObj.start && subtitleTime <= wObj.end;
+            const isFuture = subtitleTime < wObj.start;
+            // Estados por estilo: máquina de escrever esconde o futuro; foco deixa apagado
+            const inactiveClass =
+              animStyle === "typewriter"
+                ? isFuture
+                  ? "opacity-0"
+                  : "opacity-100"
+                : animStyle === "spotlight"
+                ? isFuture
+                  ? "opacity-30"
+                  : "opacity-90"
+                : "opacity-80";
             return (
               <span
                 key={wIdx}
                 className={`inline-block transition-all duration-150 ${
-                  isWordActive ? activeColorClass : "opacity-80"
+                  isWordActive ? activeColorClass : inactiveClass
                 }`}
                 style={{
                   marginRight: `calc(0.3em + ${spacingPx * 0.4}px)`
@@ -736,9 +830,12 @@ export default function EditorPage({
   corteDurationRef.current = corteDuration;
   const dispTrimStart = trimStart;
   const dispTrimEnd = trimEnd || corteDuration;
+  const cleanVideoUrl = job.clean_video_url
+    ? job.clean_video_url + (cleanVersion > 0 ? `?v=${cleanVersion}` : "")
+    : "";
   const currentVideoPath =
     (activeTab === "corte" ? job.original_video_url : "") ||
-    job.clean_video_url ||
+    cleanVideoUrl ||
     job.final_video_url ||
     "";
 
@@ -1325,6 +1422,92 @@ export default function EditorPage({
 
 
 
+                {/* 3. ALINHAMENTO DA LEGENDA & ROTAÇÃO DO VÍDEO */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Alinhamento da legenda */}
+                  <div className="space-y-3">
+                    <label className="text-[13px] font-semibold text-[#ededed]">Alinhamento da legenda</label>
+                    <div className="rounded-2xl border border-[#242424] bg-[#141414] p-4 space-y-3">
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => updateStyleAndPersist((s) => ({ ...s, subtitle_position: "custom", subtitle_x_percent: 50 }))}
+                          className={`rounded-lg border px-3 py-1.5 text-[11px] font-semibold transition ${
+                            Math.round(style.subtitle_x_percent) === 50
+                              ? "border-emerald-400 bg-emerald-500/20 text-emerald-300"
+                              : "border-[#242424] bg-[#0d0d0d] text-[#a8a8a8] hover:text-white"
+                          }`}
+                        >
+                          ↔ Centralizar horizontal
+                        </button>
+                        <button
+                          onClick={() => updateStyleAndPersist((s) => ({ ...s, subtitle_position: "custom", subtitle_y_percent: 50 }))}
+                          className={`rounded-lg border px-3 py-1.5 text-[11px] font-semibold transition ${
+                            Math.round(style.subtitle_y_percent) === 50
+                              ? "border-emerald-400 bg-emerald-500/20 text-emerald-300"
+                              : "border-[#242424] bg-[#0d0d0d] text-[#a8a8a8] hover:text-white"
+                          }`}
+                        >
+                          ↕ Centralizar vertical
+                        </button>
+                        <button
+                          onClick={() => updateStyleAndPersist((s) => ({ ...s, subtitle_position: "custom", subtitle_x_percent: 50, subtitle_y_percent: 50 }))}
+                          className="rounded-lg border border-[#242424] bg-[#0d0d0d] px-3 py-1.5 text-[11px] font-semibold text-[#a8a8a8] transition hover:border-emerald-500/40 hover:text-emerald-300"
+                        >
+                          ◎ Meio exato
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="mr-1 text-[11px] text-[#6b6b6b]">Vertical:</span>
+                        {[
+                          { label: "Topo", y: 12 },
+                          { label: "Meio", y: 50 },
+                          { label: "Base", y: 85 },
+                        ].map((p) => (
+                          <button
+                            key={p.label}
+                            onClick={() => updateStyleAndPersist((s) => ({ ...s, subtitle_position: "custom", subtitle_y_percent: p.y }))}
+                            className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition ${
+                              Math.round(style.subtitle_y_percent) === p.y
+                                ? "border-emerald-400 bg-emerald-500/20 text-emerald-300"
+                                : "border-[#242424] bg-[#0d0d0d] text-[#a8a8a8] hover:text-white"
+                            }`}
+                          >
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[11px] text-[#6b6b6b]">
+                        Posição atual: {Math.round(style.subtitle_x_percent)}% × {Math.round(style.subtitle_y_percent)}% — você também pode arrastar a legenda direto no preview.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Girar vídeo */}
+                  <div className="space-y-3">
+                    <label className="text-[13px] font-semibold text-[#ededed]">Girar vídeo</label>
+                    <div className="rounded-2xl border border-[#242424] bg-[#141414] p-4 space-y-3">
+                      <div className="grid grid-cols-4 gap-2">
+                        {[0, 90, 180, 270].map((deg) => (
+                          <button
+                            key={deg}
+                            onClick={() => updateStyleAndPersist((s) => ({ ...s, rotation: deg }))}
+                            className={`rounded-xl border py-2 text-xs font-bold transition ${
+                              (style.rotation || 0) === deg
+                                ? "border-emerald-400 bg-emerald-500/20 text-emerald-300"
+                                : "border-[#242424] bg-[#0d0d0d] text-[#a8a8a8] hover:text-white"
+                            }`}
+                          >
+                            {deg === 0 ? "Normal" : `${deg}°`}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[11px] text-[#6b6b6b]">
+                        Gira o vídeo no preview e no arquivo final — útil pra vídeo gravado deitado ou de cabeça pra baixo.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
                 {/* 4. ESTILO DE LEGENDA */}
                 <div className="space-y-3">
                   <label className="text-[13px] font-semibold text-[#ededed]">Estilo de legenda</label>
@@ -1437,8 +1620,8 @@ export default function EditorPage({
                       {[
                         { id: "pop_flash", label: "⚡ Pop / Pisca (Troca)" },
                         { id: "bounce_yellow", label: "🟡 Destaque Amarelo" },
-                        { id: "neon_cyan", label: "🟢 Neon Esmeralda" },
-                        { id: "box_primary", label: "🔲 Caixa de Texto" },
+                        { id: "typewriter", label: "⌨️ Máquina de Escrever" },
+                        { id: "spotlight", label: "💡 Acende (Foco)" },
                       ].map((anim) => (
                         <button
                           key={anim.id}
@@ -1661,10 +1844,12 @@ export default function EditorPage({
                     <label className="text-[13px] font-semibold text-[#ededed]">🎨 Color grading & imagem</label>
                     <div className="flex gap-2">
                       {[
-                        { label: "Vívido", grade: { contrast: 1.25, saturation: 1.35, brightness: 1.05, warmth: 0.0 } },
-                        { label: "Cinema", grade: { contrast: 1.3, saturation: 0.9, brightness: 1.0, warmth: 0.15 } },
-                        { label: "P&B", grade: { contrast: 1.3, saturation: 0.0, brightness: 1.0, warmth: 0.0 } },
-                        { label: "Natural", grade: { contrast: 1.0, saturation: 1.0, brightness: 1.0, warmth: 0.0 } },
+                        { label: "Natural", grade: { contrast: 1.0, saturation: 1.0, brightness: 1.0, warmth: 0.0, sharpness: 0.0, intensity: 1.0 } },
+                        { label: "Vívido", grade: { contrast: 1.25, saturation: 1.35, brightness: 1.05, warmth: 0.0, sharpness: 0.0, intensity: 1.0 } },
+                        { label: "Cinema", grade: { contrast: 1.3, saturation: 0.9, brightness: 1.0, warmth: 0.15, sharpness: 0.0, intensity: 1.0 } },
+                        { label: "Quente", grade: { contrast: 1.08, saturation: 1.12, brightness: 1.02, warmth: 0.3, sharpness: 0.0, intensity: 1.0 } },
+                        { label: "Frio", grade: { contrast: 1.08, saturation: 1.05, brightness: 1.0, warmth: -0.3, sharpness: 0.0, intensity: 1.0 } },
+                        { label: "P&B", grade: { contrast: 1.3, saturation: 0.0, brightness: 1.0, warmth: 0.0, sharpness: 0.0, intensity: 1.0 } },
                       ].map((preset) => (
                         <button
                           key={preset.label}
@@ -1679,7 +1864,7 @@ export default function EditorPage({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
                     <div>
                       <div className="flex justify-between text-xs text-[#a8a8a8] mb-1">
                         <span>Contraste:</span>
@@ -1744,37 +1929,6 @@ export default function EditorPage({
                       />
                     </div>
 
-                    <div>
-                      <div className="flex justify-between text-xs text-[#a8a8a8] mb-1">
-                        <span>Intensidade Geral:</span>
-                        <span className="font-mono text-emerald-400 font-bold">{Math.round((style.color_grade?.intensity ?? 1.0) * 100)}%</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0.0"
-                        max="2.0"
-                        step="0.05"
-                        value={style.color_grade?.intensity ?? 1.0}
-                        onChange={(e) => handleGradeChange("intensity", parseFloat(e.target.value))}
-                        className="w-full accent-emerald-400 cursor-pointer"
-                      />
-                    </div>
-
-                    <div>
-                      <div className="flex justify-between text-xs text-[#a8a8a8] mb-1">
-                        <span>Nitidez (Sharpness):</span>
-                        <span className="font-mono text-emerald-400 font-bold">{Math.round((style.color_grade?.sharpness ?? 0.0) * 100)}</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0.0"
-                        max="2.0"
-                        step="0.05"
-                        value={style.color_grade?.sharpness ?? 0.0}
-                        onChange={(e) => handleGradeChange("sharpness", parseFloat(e.target.value))}
-                        className="w-full accent-emerald-400 cursor-pointer"
-                      />
-                    </div>
                   </div>
                 </div>
 
@@ -2005,7 +2159,7 @@ export default function EditorPage({
                           className="h-full w-full object-cover transition-none"
                           style={{
                             filter: cssGradeFilter,
-                            transform: `scale(${currentZoomScale})`,
+                            transform: `scale(${currentZoomScale}) rotate(${style.rotation || 0}deg)`,
                             objectPosition: `center ${framingYBottomPercent}%`,
                           }}
                         />
@@ -2031,7 +2185,7 @@ export default function EditorPage({
                       className="h-full w-full object-cover transition-none"
                       style={{
                         filter: cssGradeFilter,
-                        transform: `scale(${currentZoomScale})`,
+                        transform: `scale(${currentZoomScale}) rotate(${style.rotation || 0}deg)`,
                       }}
                     />
                   ) : (
@@ -2039,6 +2193,18 @@ export default function EditorPage({
                       {videoError ? <span className="text-rose-400 px-3 text-center">⚠️ {videoError}</span> : <>Carregando vídeo...</>}
                     </div>
                   )
+                )}
+
+                {/* Scrub: arraste no preview pra navegar · clique = play/pause */}
+                {currentVideoPath && (
+                  <div
+                    onPointerDown={handleScrubDown}
+                    onPointerMove={handleScrubMove}
+                    onPointerUp={handleScrubEnd}
+                    onPointerCancel={handleScrubEnd}
+                    title="Arraste para os lados para navegar no vídeo · clique para tocar/pausar"
+                    className="absolute inset-x-0 top-0 bottom-14 z-10 cursor-grab active:cursor-grabbing"
+                  />
                 )}
 
                 {/* Subtitle Overlay */}
@@ -2069,7 +2235,9 @@ export default function EditorPage({
                           : style.subtitle_font === "Bebas Neue" ? "'Bebas Neue', sans-serif"
                           : "'Inter', sans-serif",
                         textShadow: style.subtitle_outline_enabled ? buildExternalOutline(style.subtitle_outline_width || 2, style.subtitle_outline_color || "#000000") : "none",
-                        filter: style.subtitle_shadow_enabled ? `drop-shadow(0 ${style.subtitle_shadow_offset || 4}px ${style.subtitle_shadow_offset || 4}px ${style.subtitle_shadow_color || "rgba(0,0,0,0.9)"})` : "none",
+                        filter: style.subtitle_shadow_enabled
+                          ? `drop-shadow(0 ${Math.round((style.subtitle_shadow_offset || 4) * 0.8)}px ${Math.round((style.subtitle_shadow_offset || 4) * 1.6)}px ${shadowRgba(style.subtitle_shadow_color)})`
+                          : "none",
                       }}
                     >
                       {renderPreviewSubContent(activeSub)}
@@ -2120,18 +2288,28 @@ async function downloadFile(url: string, filename: string) {
 }
 
 function buildExternalOutline(width: number, color: string): string {
-  const d = Math.max(1, Math.round(width / 2));
-  const c = color;
-  return [
-    `${d}px ${d}px 0 ${c}`,
-    `${-d}px ${d}px 0 ${c}`,
-    `${d}px -${d}px 0 ${c}`,
-    `${-d}px -${d}px 0 ${c}`,
-    `0 ${d}px 0 ${c}`,
-    `0 -${d}px 0 ${c}`,
-    `${d}px 0 0 ${c}`,
-    `-${d}px 0 0 ${c}`,
-  ].join(", ");
+  // Anel de sombras em 16 direções + anel interno: contorno arredondado e uniforme,
+  // sem os "buracos" nas diagonais que o método de 8 direções deixava.
+  const r = Math.max(1, width * 0.6); // escala compacta pro tamanho da fonte no preview
+  const shadows: string[] = [];
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * Math.PI * 2;
+    shadows.push(`${(Math.cos(a) * r).toFixed(1)}px ${(Math.sin(a) * r).toFixed(1)}px 0 ${color}`);
+  }
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
+    shadows.push(`${(Math.cos(a) * r * 0.55).toFixed(1)}px ${(Math.sin(a) * r * 0.55).toFixed(1)}px 0 ${color}`);
+  }
+  return shadows.join(", ");
+}
+
+function shadowRgba(color: string | undefined): string {
+  // Suaviza a cor da sombra projetada (65% de opacidade) — sombra chapada 100% preta fica dura
+  if (!color) return "rgba(0,0,0,0.65)";
+  const m = /^#?([0-9a-fA-F]{6})$/.exec(color.trim());
+  if (!m) return color;
+  const n = parseInt(m[1], 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, 0.65)`;
 }
 
 function formatTimeExact(seconds: number): string {
