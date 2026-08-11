@@ -56,6 +56,21 @@ Com o **Docker Desktop aberto**:
 - **Windows:** dê dois cliques em **`Editu.bat`**
 - **Mac:** dê dois cliques em **`Editu.command`**
 
+> 🍎 **Mac — só na PRIMEIRA vez:** o macOS pode mostrar um aviso de segurança
+> dizendo que *"não foi possível verificar se o item está livre de malware"*.
+> **Isso é normal** (o app é gratuito e roda só no seu computador) — **não clique
+> em "Mover para o Lixo".** Faça assim:
+>
+> **Jeito 1 (mais fácil):** clique no `Editu.command` com o **botão direito**
+> (ou segure **Control** e clique) → **Abrir** → no aviso, clique **Abrir**.
+>
+> **Jeito 2 (se aparecer só "Mover para o Lixo / OK"):** clique **OK** → abra
+> **Ajustes do Sistema → Privacidade e Segurança** → role até o fim e clique em
+> **"Abrir Mesmo Assim"** (ao lado da mensagem sobre o Editu) → volte e dê dois
+> cliques no `Editu.command` de novo → **Abrir**.
+>
+> Depois dessa primeira vez, abre normal com 2 cliques. 👍
+
 Vai abrir uma janela preta escrevendo umas coisas — **isso é normal**, é só o
 app se preparando.
 
@@ -88,7 +103,7 @@ Para desligar o app e liberar o computador:
 | A página abriu com erro logo de cara | Aguarde **~30 segundos** e **atualize** a página (F5). Na primeira vez o app ainda está "aquecendo". |
 | O navegador não abriu sozinho | Abra o navegador e digite: **http://localhost:3000** |
 | Disse que o **Docker não iniciou** | Abra o **Docker Desktop**, espere a baleia 🐳 ficar verde, e rode o atalho **Editu** de novo. |
-| No Mac apareceu "não pode ser aberto por ser de um desenvolvedor não identificado" | Clique com o **botão direito** no `Editu.command` → **Abrir** → **Abrir**. (Só na primeira vez.) |
+| No Mac apareceu aviso de segurança ("não foi possível verificar…" ou "desenvolvedor não identificado") | **Não** clique em "Mover para o Lixo". Botão **direito** no `Editu.command` → **Abrir** → **Abrir**. Se só aparecer "Lixo/OK": **OK** → **Ajustes do Sistema → Privacidade e Segurança** → **"Abrir Mesmo Assim"**. (Só na primeira vez.) |
 | A transcrição/edição está **demorando** | É normal em vídeos maiores — o computador está processando com IA. Vídeos curtos são bem mais rápidos. |
 | Nada funcionou | Tire um **print da janela preta** com a mensagem de erro e envie para o suporte. |
 
