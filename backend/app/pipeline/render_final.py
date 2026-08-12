@@ -455,8 +455,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     max_chars = getattr(style, "subtitle_max_chars_per_line", 25)
     is_upper = theme in ("andromeda", "million")
 
-    # \blur arredonda as bordas do traçado e difunde a sombra (visual mais suave)
-    blur_tag = "{\\blur1.5}" if (outline_w or shadow_d) else ""
+    # NÃO usar \blur aqui: em ASS ele borra o glifo inteiro, não só a sombra/traçado,
+    # e a legenda sai felpuda. A sombra já é suavizada pelo alpha do BackColour acima,
+    # que é o equivalente ao drop-shadow do preview (borra a sombra, mantém a letra nítida).
+    blur_tag = ""
 
     for seg in transcript:
         if is_animated and seg.words:
