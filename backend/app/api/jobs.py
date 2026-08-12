@@ -308,6 +308,33 @@ async def trigger_render(job_id: str):
     return {"message": "Renderização iniciada!", "status": job.status}
 
 
+def _synced_transcript_for_render(job: Job):
+    """Garante que a legenda esteja no tempo do vídeo CORTADO antes de queimar.
+
+    Se as marcações passarem da duração do vídeo limpo, elas ainda estão no tempo
+    do vídeo original — recalcula a partir do áudio bruto em vez de queimar a
+    legenda fora de sincronia (e conserta jobs salvos errados por versões antigas).
+    """
+    tx = job.transcript
+    if not tx or not job.cuts or not job.clean_duration:
+        return tx
+    if tx[-1].end <= job.clean_duration + 0.5:
+        return tx
+
+    base = job.raw_transcript
+    if not base:
+        return tx
+    from app.pipeline.cut_detector import adjust_transcript_for_cuts
+    from app.pipeline.transcribe import rechunk_transcript
+    fixed = adjust_transcript_for_cuts(rechunk_transcript(base), job.cuts)
+    print(
+        f"🔧 Legenda fora de sincronia ({tx[-1].end:.2f}s > vídeo de "
+        f"{job.clean_duration:.2f}s) — recalculada para {fixed[-1].end:.2f}s"
+    )
+    update_job(job.id, transcript=fixed)
+    return fixed
+
+
 def _run_render_pipeline(job: Job):
     try:
         update_job(job.id, status=JobStatus.RENDERING, progress=5)
@@ -318,7 +345,7 @@ def _run_render_pipeline(job: Job):
             clean_video_path=clean_path,
             output_path=final_path,
             style_options=job.style_options,
-            transcript=job.transcript,
+            transcript=_synced_transcript_for_render(job),
             cuts=job.cuts,
         )
 
@@ -354,6 +381,7 @@ async def trigger_batch_render(job_id: str, payload: Optional[BatchRenderPayload
 def _run_batch_render_pipeline(job: Job, formats: List[str]):
     try:
         clean_path = str(get_path(job.id, "clean_video.mp4"))
+        transcript = _synced_transcript_for_render(job)
         batch_videos = {}
         rendered_files = []
 
@@ -370,7 +398,7 @@ def _run_batch_render_pipeline(job: Job, formats: List[str]):
                 clean_video_path=clean_path,
                 output_path=out_path,
                 style_options=current_style,
-                transcript=job.transcript,
+                transcript=transcript,
                 cuts=job.cuts,
             )
 

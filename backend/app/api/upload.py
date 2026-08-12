@@ -123,7 +123,11 @@ def run_cleanup_pipeline(job: Job) -> None:
         wav_path = str(get_path(job.id, "audio.wav"))
         clean_audio = extract_clean_audio_wav(working_file, wav_path)
         raw_transcript = transcribe_audio(clean_audio)
-        update_job(job.id, raw_transcript=raw_transcript, transcript=raw_transcript, progress=45)
+        # NÃO publica `transcript` ainda: nesta etapa ele está no tempo do vídeo
+        # ORIGINAL. Só depois do corte (passo 3) ele vira tempo do vídeo limpo.
+        # Publicar antes fazia o front carregar a versão dessincronizada e depois
+        # devolvê-la ao backend na exportação, queimando a legenda fora de sincronia.
+        update_job(job.id, raw_transcript=raw_transcript, progress=45)
 
         # Step 2: Detect cuts in breath gaps
         update_job(job.id, status=JobStatus.CUTTING, progress=55)

@@ -90,6 +90,10 @@ export default function EditorPage({
   const removeAnchorRef = useRef(0);
   // Há edições de corte ainda não aplicadas no vídeo limpo (aplica ao sair da aba Corte)
   const cutsDirtyRef = useRef(false);
+  // O usuário editou o texto da transcrição? Só nesse caso a tela pode devolver o
+  // transcript ao backend — senão ela sobrescreve o que o servidor sincronizou.
+  const transcriptDirtyRef = useRef(false);
+  const transcriptSigRef = useRef("");
   // Só considera o reprocessamento concluído depois de ver o job OCUPADO ao menos uma
   // vez — ignora respostas de poll atrasadas que ainda dizem "clean_ready" antigo
   const sawBusyRef = useRef(true);
@@ -121,7 +125,18 @@ export default function EditorPage({
       trimStartRef.current = a;
       trimEndRef.current = b;
     }
-    if (job.transcript && localTranscript.length === 0) setLocalTranscript(job.transcript);
+    // Recarrega a transcrição sempre que o servidor publicar uma versão diferente
+    // (ex.: depois de um reprocessamento de cortes). Só não sobrescreve se o usuário
+    // estiver editando o texto. O guarda antigo ("carrega só se estiver vazia")
+    // travava a tela na primeira versão recebida, que podia ser a não-sincronizada.
+    if (job.transcript && job.transcript.length > 0 && !transcriptDirtyRef.current) {
+      const last = job.transcript[job.transcript.length - 1];
+      const sig = `${job.transcript.length}:${job.transcript[0].start}:${last.end}`;
+      if (sig !== transcriptSigRef.current) {
+        transcriptSigRef.current = sig;
+        setLocalTranscript(job.transcript);
+      }
+    }
 
     if (!isJobFinished) sawBusyRef.current = true;
 
@@ -132,12 +147,17 @@ export default function EditorPage({
       // versionamos a URL do clean_video pro navegador recarregar o arquivo novo
       // (sem isso ele toca o vídeo antigo em cache e a legenda dessincroniza).
       if (isReprocessing && sawBusyRef.current) {
-        if (job.transcript) setLocalTranscript(job.transcript);
+        // O backend regenerou a transcrição a partir do áudio original, então
+        // qualquer edição de texto pendente já foi substituída de qualquer forma.
+        if (job.transcript) {
+          transcriptDirtyRef.current = false;
+          setLocalTranscript(job.transcript);
+        }
         setIsReprocessing(false);
         setCleanVersion((v) => v + 1);
       }
     }
-  }, [job, isReprocessing, localCuts.length, localTranscript.length]);
+  }, [job, isReprocessing, localCuts.length]);
 
   const updateStyleAndPersist = useCallback(
     async (updater: (prev: StyleOptions) => StyleOptions) => {
@@ -416,7 +436,12 @@ export default function EditorPage({
     setRenderError(null);
     setIsRendering(true);
     try {
-      if (localTranscript.length > 0) await updateTranscript(jobId, localTranscript);
+      // Só envia a transcrição se o usuário tiver editado o texto. Enviar sempre
+      // sobrescrevia no servidor a versão sincronizada com os cortes pela versão
+      // que a tela tinha carregado — era isso que dessincronizava a legenda no export.
+      if (transcriptDirtyRef.current && localTranscript.length > 0) {
+        await updateTranscript(jobId, localTranscript);
+      }
       await setStyleOptions(jobId, style);
       await startRender(jobId);
       setTimeout(() => refetch(), 1000);
@@ -716,6 +741,7 @@ export default function EditorPage({
       confidence: oldWords[wi]?.confidence ?? 1.0,
     }));
     updated[index] = { ...seg, text: newText, words: redistributedWords };
+    transcriptDirtyRef.current = true;
     setLocalTranscript(updated);
 
     // Auto-save transcript with debounce (1.5s)
