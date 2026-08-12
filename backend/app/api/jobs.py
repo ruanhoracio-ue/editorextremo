@@ -30,6 +30,8 @@ class StyleUpdateRequest(BaseModel):
 
 class CutsUpdateRequest(BaseModel):
     cuts: List[CutSegment]
+    # False = só salva os cortes (edição ao vivo no front); True = re-renderiza o vídeo limpo
+    reprocess: bool = True
 
 
 class TranscriptUpdateRequest(BaseModel):
@@ -110,9 +112,18 @@ async def update_job_cuts(job_id: str, body: CutsUpdateRequest):
         raise HTTPException(404, "Job não encontrado")
 
     update_job(job_id, cuts=body.cuts)
+
+    if not body.reprocess:
+        # Edição ao vivo: o preview do front já pula os trechos removidos; o vídeo
+        # limpo só é re-renderizado quando o usuário aprova os cortes.
+        return {"message": "Cortes salvos", "status": job.status}
+
+    # Marca como ocupado JÁ (antes do FFmpeg começar), senão o front vê "clean_ready"
+    # velho durante o corte e acha que terminou — era isso que dessincronizava a legenda.
+    update_job(job_id, status=JobStatus.CUTTING, progress=30)
     enqueue(job, _reprocess_cuts)
 
-    return {"message": "Cortes atualizados! Reprocessando...", "status": job.status}
+    return {"message": "Cortes atualizados! Reprocessando...", "status": "cutting"}
 
 
 def _reprocess_cuts(job: Job):
@@ -124,7 +135,10 @@ def _reprocess_cuts(job: Job):
         clean_duration = get_video_duration(cut_path)
         base_tx = job.raw_transcript or job.transcript
         if base_tx:
-            synced_transcript = adjust_transcript_for_cuts(base_tx, job.cuts)
+            # Re-agrupa com as regras atuais (vírgula quebra; nunca termina em
+            # preposição) — jobs antigos foram chunkados com regras antigas
+            from app.pipeline.transcribe import rechunk_transcript
+            synced_transcript = adjust_transcript_for_cuts(rechunk_transcript(base_tx), job.cuts)
             update_job(job.id, transcript=synced_transcript)
 
         update_job(job.id, status=JobStatus.GRADING, progress=60)

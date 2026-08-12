@@ -131,12 +131,13 @@ export async function updateTranscript(
 
 export async function updateCuts(
   jobId: string,
-  cuts: CutSegment[]
+  cuts: CutSegment[],
+  reprocess: boolean = true
 ): Promise<void> {
   const res = await fetch(`${API_BASE}/api/jobs/${jobId}/cuts`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ cuts }),
+    body: JSON.stringify({ cuts, reprocess }),
   });
 
   if (!res.ok) {

@@ -307,8 +307,9 @@ def apply_cuts(video_path: str, segments: List[CutSegment], output_path: str) ->
         "-i", video_path,
         "-filter_complex", full_filter_complex,
         "-map", "[outv]", "-map", "[outa]",
-        "-c:v", "libx264", "-preset", "fast", "-crf", "22",
-        "-c:a", "aac", "-b:a", "128k",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "192k",
         output_path
     ]
 

@@ -66,6 +66,24 @@ def transcribe_audio(
         raise RuntimeError(f"Erro ao transcrever áudio do vídeo: {e}")
 
 
+# Palavras "de ligação" (preposições, artigos, conjunções) que NUNCA podem fechar
+# uma legenda — "mesmo, a mais de" fica feio; o "de" pertence à próxima frase.
+_LINKING_WORDS = {
+    "a", "à", "às", "ao", "aos", "as", "o", "os", "e", "é", "de", "da", "do", "das", "dos",
+    "em", "no", "na", "nos", "nas", "num", "numa", "um", "uma", "uns", "umas",
+    "pra", "pro", "pras", "pros", "para", "por", "pela", "pelo", "pelas", "pelos",
+    "com", "sem", "sob", "sobre", "que", "se", "mas", "ou", "nem", "como",
+    "meu", "minha", "seu", "sua", "teu", "tua", "esse", "essa", "este", "esta",
+    "aquele", "aquela", "mais", "menos", "muito", "tão", "já",
+}
+
+_HARD_BREAKS = (".", "?", "!", ";", ":", ",")
+
+
+def _is_linking(word: str) -> bool:
+    return word.strip().strip(".,?!;:…\"'").lower() in _LINKING_WORDS
+
+
 def _chunk_into_short_captions(
     segments: List[TranscriptSegment],
     max_words: int = 4,
@@ -74,8 +92,23 @@ def _chunk_into_short_captions(
     Split transcript segments into punchy 3-4 word captions.
     Segment start/end are derived exactly from word timestamps so subtitles
     are perfectly synchronized with the spoken audio — no artificial offsets.
+
+    Regras de quebra:
+    - pontuação forte (. ? ! ; :) e VÍRGULA sempre fecham a legenda;
+    - uma legenda nunca termina em palavra de ligação (preposição/artigo/conjunção):
+      essas palavras são adiadas pra legenda seguinte.
     """
     result: List[TranscriptSegment] = []
+
+    def flush(chunk: List[TranscriptWord]):
+        if not chunk:
+            return
+        result.append(TranscriptSegment(
+            text=" ".join(cw.word for cw in chunk),
+            start=round(chunk[0].start, 3),
+            end=round(chunk[-1].end, 3),
+            words=chunk,
+        ))
 
     for seg in segments:
         words = seg.words
@@ -86,27 +119,37 @@ def _chunk_into_short_captions(
         chunk_words: List[TranscriptWord] = []
         for w in words:
             chunk_words.append(w)
-            if len(chunk_words) >= max_words or w.word.endswith((".", "?", "!", ";")):
-                start_time = round(chunk_words[0].start, 3)
-                end_time = round(chunk_words[-1].end, 3)
-                text = " ".join(cw.word for cw in chunk_words)
-                result.append(TranscriptSegment(
-                    text=text,
-                    start=start_time,
-                    end=end_time,
-                    words=chunk_words,
-                ))
-                chunk_words = []
+            hard_break = w.word.strip().endswith(_HARD_BREAKS)
+            if hard_break or len(chunk_words) >= max_words:
+                carry: List[TranscriptWord] = []
+                if not hard_break:
+                    # Adia palavras de ligação do fim pro próximo chunk (no máx. 2,
+                    # e nunca esvaziando o chunk atual)
+                    while len(chunk_words) > 1 and len(carry) < 2 and _is_linking(chunk_words[-1].word):
+                        carry.insert(0, chunk_words.pop())
+                flush(chunk_words)
+                chunk_words = carry
 
-        if chunk_words:
-            start_time = round(chunk_words[0].start, 3)
-            end_time = round(chunk_words[-1].end, 3)
-            text = " ".join(cw.word for cw in chunk_words)
-            result.append(TranscriptSegment(
-                text=text,
-                start=start_time,
-                end=end_time,
-                words=chunk_words,
-            ))
+        flush(chunk_words)
 
     return result
+
+
+def rechunk_transcript(segments: List[TranscriptSegment]) -> List[TranscriptSegment]:
+    """Re-agrupa um transcript já chunkado aplicando as regras atuais de quebra.
+
+    Usado no reprocessamento de cortes: jobs antigos foram chunkados com regras
+    antigas (sem vírgula/preposição); achatamos as palavras e re-chunkamos.
+    """
+    all_words: List[TranscriptWord] = []
+    for seg in segments:
+        all_words.extend(seg.words)
+    if not all_words:
+        return segments
+    merged = TranscriptSegment(
+        text=" ".join(w.word for w in all_words),
+        start=all_words[0].start,
+        end=all_words[-1].end,
+        words=all_words,
+    )
+    return _chunk_into_short_captions([merged])

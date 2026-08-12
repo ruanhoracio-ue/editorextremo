@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import shutil
 from pathlib import Path
@@ -55,6 +56,74 @@ def format_caption_text(
     return "\\N".join(lines)
 
 
+# Corte vertical "inteligente" (sem dependência de visão computacional): em vídeo
+# de pessoa falando o rosto fica na linha do terço superior, então ao cortar a altura
+# centramos a janela em 35% do frame em vez do meio — não decapita em 1:1/4:5/16:9.
+SMART_CROP_Y = "max(0,min(in_h-out_h,in_h*0.35-out_h/2))"
+
+# Quando o formato de destino é MUITO diferente do original (ex.: vídeo vertical
+# exportado em 16:9, ou horizontal exportado em 9:16), cortar destruiria o
+# enquadramento. Nesses casos mostramos o vídeo inteiro centralizado sobre um
+# fundo desfocado dele mesmo. Abaixo desta fração de área visível, entra o fundo.
+BLUR_BG_MIN_VISIBLE = 0.5
+
+
+def _get_video_dimensions(video_path: str) -> Optional[tuple[int, int]]:
+    """Largura x altura do vídeo. Usa ffprobe e cai pro stderr do ffmpeg quando
+    só existe o binário do imageio-ffmpeg (caso do pacote dos alunos)."""
+    if shutil.which("ffprobe"):
+        try:
+            res = subprocess.run(
+                ["ffprobe", "-v", "error", "-select_streams", "v:0",
+                 "-show_entries", "stream=width,height", "-of", "csv=p=0:s=x", video_path],
+                capture_output=True, text=True, timeout=60, check=True,
+            )
+            w, h = res.stdout.strip().split("x")[:2]
+            if int(w) > 0 and int(h) > 0:
+                return int(w), int(h)
+        except Exception:
+            pass
+    try:
+        res = subprocess.run([get_ffmpeg_binary(), "-i", video_path],
+                             capture_output=True, text=True, timeout=60)
+        m = re.search(r"Video:.*?[\s,](\d{2,5})x(\d{2,5})", res.stderr)
+        if m:
+            return int(m.group(1)), int(m.group(2))
+    except Exception:
+        pass
+    return None
+
+
+def _needs_blur_background(src_dims: Optional[tuple[int, int]], canvas_w: int, canvas_h: int) -> bool:
+    """Só entra quando o destino é MUITO mais largo que a origem (ex.: vídeo vertical
+    exportado em 16:9), onde recortar decapitaria a imagem.
+
+    O caminho contrário — vídeo horizontal exportado em 9:16 — continua recortando
+    no rosto: é o formato Reels/Shorts de sempre, onde a pessoa preenche a tela.
+    """
+    if not src_dims or not src_dims[0] or not src_dims[1]:
+        return False
+    src_ar = src_dims[0] / src_dims[1]
+    tgt_ar = canvas_w / canvas_h
+    if tgt_ar <= src_ar:
+        return False
+    return src_ar / tgt_ar < BLUR_BG_MIN_VISIBLE
+
+
+def _blur_bg_filter(main_src: str, canvas_w: int, canvas_h: int, out_label: str) -> str:
+    """Vídeo inteiro centralizado sobre um fundo desfocado dele mesmo.
+    O blur é feito em miniatura e reescalado (muito mais rápido que gblur em 1080p)."""
+    sw = max(16, (canvas_w // 8) // 2 * 2)
+    sh = max(16, (canvas_h // 8) // 2 * 2)
+    return (
+        f"{main_src}split=2[bgsrc][fgsrc];"
+        f"[bgsrc]scale={sw}:{sh}:force_original_aspect_ratio=increase,crop={sw}:{sh},"
+        f"gblur=sigma=8,scale={canvas_w}:{canvas_h},eq=brightness=-0.12:saturation=1.05[bgblur];"
+        f"[fgsrc]scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=decrease:flags=lanczos[fgfit];"
+        f"[bgblur][fgfit]overlay=(W-w)/2:(H-h)/2,setsar=1[{out_label}]"
+    )
+
+
 def _get_canvas_dimensions(aspect_ratio: str) -> tuple[int, int]:
     if aspect_ratio == "4:5":
         return 1080, 1350
@@ -88,6 +157,13 @@ def render_final_video(
         filters.append(f"[0:v]{rot_map[rotation]}[vsrc]")
         main_src = "[vsrc]"
 
+    # Formato de destino muito diferente do original? Mostra o vídeo inteiro sobre
+    # fundo desfocado em vez de recortar (ex.: vertical → 16:9, horizontal → 9:16).
+    src_dims = _get_video_dimensions(clean_video_path)
+    if src_dims and rotation in (90, 270):
+        src_dims = (src_dims[1], src_dims[0])
+    use_blur_bg = _needs_blur_background(src_dims, canvas_w, canvas_h)
+
     # --- Split Screen Layout (Clean 50/50 vertical stack with framing Y) ---
     if style_options.layout == "split_screen" and style_options.split_screen_image:
         img_path = style_options.split_screen_image
@@ -105,22 +181,28 @@ def render_final_video(
             crop_y_bot = f"(in_h-{half_h})*{framing_y_bot/100.0:.2f}"
 
             filters.append(
-                f"[1:v]scale={canvas_w}:-1,crop={canvas_w}:{half_h}:0:'{crop_y_top}',setsar=1[top];"
-                f"{main_src}scale={canvas_w}:{half_h}:force_original_aspect_ratio=increase,crop={canvas_w}:{half_h}:0:'{crop_y_bot}',setsar=1[bot];"
+                f"[1:v]scale={canvas_w}:-1:flags=lanczos,crop={canvas_w}:{half_h}:0:'{crop_y_top}',setsar=1[top];"
+                f"{main_src}scale={canvas_w}:{half_h}:force_original_aspect_ratio=increase:flags=lanczos,crop={canvas_w}:{half_h}:0:'{crop_y_bot}',setsar=1[bot];"
                 f"[top][bot]vstack=inputs=2[base_canvas]"
             )
         else:
             filters.append(
-                f"{main_src}scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=increase,crop={canvas_w}:{canvas_h},setsar=1[base_canvas]"
+                f"{main_src}scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=increase:flags=lanczos,"
+                f"crop={canvas_w}:{canvas_h}:(in_w-out_w)/2:'{SMART_CROP_Y}',setsar=1[base_canvas]"
             )
+    elif use_blur_bg:
+        filters.append(_blur_bg_filter(main_src, canvas_w, canvas_h, "base_canvas"))
     else:
         filters.append(
-            f"{main_src}scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=increase,crop={canvas_w}:{canvas_h},setsar=1[base_canvas]"
+            f"{main_src}scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=increase:flags=lanczos,"
+            f"crop={canvas_w}:{canvas_h}:(in_w-out_w)/2:'{SMART_CROP_Y}',setsar=1[base_canvas]"
         )
 
     # --- Dynamic Zoom Filter ---
+    # Sem zoom no 16:9 (YouTube) nem quando o vídeo está centralizado sobre fundo
+    # desfocado — nos dois casos o objetivo é preservar o enquadramento original.
     current_label = "base_canvas"
-    if style_options.zoom_enabled:
+    if style_options.zoom_enabled and aspect != "16:9" and not use_blur_bg:
         zoom_filter = _build_varied_zoom_filter(cuts, transcript, style_options.zoom_intensity, canvas_w, canvas_h)
         if zoom_filter:
             filters.append(f"[{current_label}]{zoom_filter}[zoomed_canvas]")
@@ -131,7 +213,8 @@ def render_final_video(
         ass_path = _generate_ass_subtitles(clean_video_path, transcript, style_options)
         if ass_path:
             escaped = ass_path.replace(":", "\\:").replace("'", "\\'")
-            filters.append(f"[{current_label}]ass='{escaped}'[final]")
+            fonts_escaped = _fonts_dir().replace(":", "\\:").replace("'", "\\'")
+            filters.append(f"[{current_label}]ass='{escaped}':fontsdir='{fonts_escaped}'[final]")
         else:
             filters.append(f"[{current_label}]null[final]")
     else:
@@ -145,8 +228,9 @@ def render_final_video(
     cmd.extend(["-filter_complex", filter_complex])
     cmd.extend(["-map", "[final]", "-map", "0:a"])
     cmd.extend([
-        "-c:v", "libx264", "-preset", "fast", "-crf", "22",
-        "-c:a", "aac", "-b:a", "128k",
+        "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "192k",
         "-shortest",
         output_path
     ])
@@ -217,19 +301,22 @@ def _simple_render(
         vf_parts.append(rot_map[rotation])
 
     vf_parts.append(
-        f"scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=increase,crop={canvas_w}:{canvas_h},setsar=1"
+        f"scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=increase:flags=lanczos,"
+        f"crop={canvas_w}:{canvas_h}:(in_w-out_w)/2:'{SMART_CROP_Y}',setsar=1"
     )
 
     if style_options.subtitle_style == "basic" and transcript:
         ass_path = _generate_ass_subtitles(clean_video_path, transcript, style_options)
         if ass_path:
             escaped = ass_path.replace(":", "\\:").replace("'", "\\'")
-            vf_parts.append(f"ass='{escaped}'")
+            fonts_escaped = _fonts_dir().replace(":", "\\:").replace("'", "\\'")
+            vf_parts.append(f"ass='{escaped}':fontsdir='{fonts_escaped}'")
 
     cmd = [ffmpeg_exe, "-y", "-i", clean_video_path, "-vf", ",".join(vf_parts)]
     cmd.extend([
-        "-c:v", "libx264", "-preset", "fast", "-crf", "22",
-        "-c:a", "aac", "-b:a", "128k",
+        "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "192k",
         output_path
     ])
 
@@ -239,6 +326,32 @@ def _simple_render(
         subprocess.run(["cp", clean_video_path, output_path])
 
     return output_path
+
+
+def _fonts_dir() -> str:
+    """Diretório das fontes embarcadas usadas no burn das legendas (libass fontsdir)."""
+    return str(Path(__file__).resolve().parent.parent / "assets" / "fonts")
+
+
+def _wrap_words_by_chars(words: list, max_chars: int) -> list[list]:
+    """Agrupa palavras em linhas de até max_chars — MESMO algoritmo guloso do preview
+    (getDisplayLines no editor), pra exportação e preview quebrarem idêntico."""
+    lines: list[list] = []
+    current: list = []
+    current_len = 0
+    for w in words:
+        word_txt = w.word if hasattr(w, "word") else str(w)
+        new_len = current_len + (1 if current else 0) + len(word_txt)
+        if new_len <= max_chars or not current:
+            current.append(w)
+            current_len = new_len
+        else:
+            lines.append(current)
+            current = [w]
+            current_len = len(word_txt)
+    if current:
+        lines.append(current)
+    return lines
 
 
 def _hex_to_ass_color(hex_color: str, alpha: str = "00") -> str:
@@ -266,16 +379,18 @@ def _generate_ass_subtitles(
     ass_path = Path(video_path).parent / "subtitles.ass"
 
     raw_font = style.subtitle_font.value if hasattr(style.subtitle_font, "value") else str(style.subtitle_font)
+    # Fontes REAIS embarcadas em app/assets/fonts (via fontsdir do libass) — o export
+    # usa a mesma fonte do preview em vez de cair tudo em Arial.
     font_map = {
-        "TikTok Medium": "Arial",
-        "Helvetica": "Helvetica",
-        "Montserrat": "Arial",
-        "Lato": "Arial",
-        "The Bold Font": "Arial",
-        "Bebas Neue": "Arial",
-        "Inter": "Arial",
+        "TikTok Medium": "TikTok Sans",
+        "Helvetica": "Arimo",  # metricamente idêntica à Helvetica/Arial, licença livre
+        "Montserrat": "Montserrat",
+        "Lato": "Lato",
+        "The Bold Font": "Anton",
+        "Bebas Neue": "Bebas Neue",
+        "Inter": "Inter",
     }
-    font_name = font_map.get(raw_font, "Arial")
+    font_name = font_map.get(raw_font, "Inter")
     font_size = style.subtitle_font_size
 
     aspect = getattr(style, "aspect_ratio", "9:16") or "9:16"
@@ -340,29 +455,40 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     max_chars = getattr(style, "subtitle_max_chars_per_line", 25)
     is_upper = theme in ("andromeda", "million")
 
+    # \blur arredonda as bordas do traçado e difunde a sombra (visual mais suave)
+    blur_tag = "{\\blur1.5}" if (outline_w or shadow_d) else ""
+
     for seg in transcript:
+        if is_animated and seg.words:
+            # Word-by-word karaoke com quebra de linha IGUAL ao preview: as palavras
+            # são agrupadas em linhas de max_chars, e cada bloco de max_lines linhas
+            # vira um Dialogue próprio com o tempo das suas palavras (o preview só
+            # mostra as linhas da palavra ativa — aqui é o equivalente exato).
+            # \kt pula o timer do karaokê pro offset real de cada palavra.
+            lines = _wrap_words_by_chars(seg.words, max_chars)
+            group_size = max(1, max_lines)
+            for gi in range(0, len(lines), group_size):
+                group = lines[gi:gi + group_size]
+                g_words = [w for line in group for w in line]
+                g_start = _seconds_to_ass_time(g_words[0].start)
+                g_end = _seconds_to_ass_time(g_words[-1].end)
+                base_ts = g_words[0].start
+                line_txts = []
+                for line in group:
+                    parts = []
+                    for w in line:
+                        dur_cs = int(max(0.1, w.end - w.start) * 100)
+                        offset_cs = max(0, int((w.start - base_ts) * 100))
+                        word_txt = w.word.upper() if is_upper else w.word
+                        parts.append(f"{{\\kt{offset_cs}}}{{\\kf{dur_cs}}}{word_txt}")
+                    line_txts.append(" ".join(parts))
+                text = "\\N".join(line_txts)
+                events.append(f"Dialogue: 0,{g_start},{g_end},Default,,0,0,0,,{{\\pos({pos_x},{pos_y})}}{blur_tag}{text}")
+            continue
+
         start = _seconds_to_ass_time(seg.start)
         end = _seconds_to_ass_time(seg.end)
-
-        if is_animated and seg.words:
-            # Word-by-word karaoke. Use \kt to jump the karaoke timer to each
-            # word's real offset (relative to the dialogue start) so highlights
-            # are perfectly synchronized with each spoken word.
-            # Use words[0].start as the base reference (not seg.start) to avoid
-            # any pre-roll offset that would shift all karaoke timings.
-            karaoke_parts = []
-            base_ts = seg.words[0].start
-            for w in seg.words:
-                dur_cs = int(max(0.1, w.end - w.start) * 100)
-                offset_cs = max(0, int((w.start - base_ts) * 100))
-                word_txt = w.word.upper() if is_upper else w.word
-                karaoke_parts.append(f"{{\\kt{offset_cs}}}{{\\kf{dur_cs}}}{word_txt}")
-            text = " ".join(karaoke_parts)
-        else:
-            text = format_caption_text(seg.text, max_lines, max_chars, is_upper)
-
-        # \blur arredonda as bordas do traçado e difunde a sombra (visual mais suave)
-        blur_tag = "{\\blur1.5}" if (outline_w or shadow_d) else ""
+        text = format_caption_text(seg.text, max_lines, max_chars, is_upper)
         events.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{{\\pos({pos_x},{pos_y})}}{blur_tag}{text}")
 
     ass_path.write_text(header + "\n".join(events), encoding="utf-8")

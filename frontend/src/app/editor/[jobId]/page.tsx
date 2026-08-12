@@ -52,7 +52,10 @@ export default function EditorPage({
   // Trim (in/out points) — sobre a linha do tempo ORIGINAL. Deriva os cuts enviados ao backend.
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(0);
-  const [dragKind, setDragKind] = useState<null | "start" | "end" | "playhead">(null);
+  const [dragKind, setDragKind] = useState<null | "start" | "end" | "playhead" | "remove">(null);
+  // Modo "remover trecho do meio": arrastar na linha do tempo marca a faixa errada e remove
+  const [removeMode, setRemoveMode] = useState(false);
+  const [removeSel, setRemoveSel] = useState<{ a: number; b: number } | null>(null);
   // Bump a cada reprocessamento concluído — força o <video> a recarregar o clean_video
   // novo do disco (sem isso o navegador toca o vídeo antigo em cache e a legenda "sai fora")
   const [cleanVersion, setCleanVersion] = useState(0);
@@ -60,10 +63,14 @@ export default function EditorPage({
   const [isDraggingSub, setIsDraggingSub] = useState(false);
   const [copiedTx, setCopiedTx] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
+  // Dimensões reais do vídeo (pro preview cortar igual ao render final)
+  const [videoDims, setVideoDims] = useState<{ w: number; h: number } | null>(null);
 
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const topVideoRef = useRef<HTMLVideoElement>(null);
+  // Cópia muda do vídeo usada como fundo desfocado quando o formato não bate
+  const bgVideoRef = useRef<HTMLVideoElement>(null);
   const gradeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const transcriptTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cutTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -78,6 +85,14 @@ export default function EditorPage({
   const trimEndRef = useRef(0);
   const corteDurationRef = useRef(1);
   const timelineRef = useRef<HTMLDivElement>(null);
+  // Seleção do modo "remover trecho" (ref pro pointerup ler o valor mais recente)
+  const removeSelRef = useRef<{ a: number; b: number } | null>(null);
+  const removeAnchorRef = useRef(0);
+  // Há edições de corte ainda não aplicadas no vídeo limpo (aplica ao sair da aba Corte)
+  const cutsDirtyRef = useRef(false);
+  // Só considera o reprocessamento concluído depois de ver o job OCUPADO ao menos uma
+  // vez — ignora respostas de poll atrasadas que ainda dizem "clean_ready" antigo
+  const sawBusyRef = useRef(true);
   const userTouchedStyle = useRef(false);
 
   // Track when we've done our initial data sync from a finished job
@@ -108,13 +123,15 @@ export default function EditorPage({
     }
     if (job.transcript && localTranscript.length === 0) setLocalTranscript(job.transcript);
 
+    if (!isJobFinished) sawBusyRef.current = true;
+
     if (isJobFinished) {
       hasInitialSyncedFinishedJob.current = true;
       // Ao concluir um reprocessamento, o backend recalcula as marcações da transcrição
       // (adjust_transcript_for_cuts) — atualizamos a transcrição, liberamos o estado e
       // versionamos a URL do clean_video pro navegador recarregar o arquivo novo
       // (sem isso ele toca o vídeo antigo em cache e a legenda dessincroniza).
-      if (isReprocessing) {
+      if (isReprocessing && sawBusyRef.current) {
         if (job.transcript) setLocalTranscript(job.transcript);
         setIsReprocessing(false);
         setCleanVersion((v) => v + 1);
@@ -137,18 +154,64 @@ export default function EditorPage({
   const handleTimeUpdate = () => {
     if (videoRef.current) {
       setCurrentTime(videoRef.current.currentTime);
+      // Corrige deriva do fundo desfocado (ele é uma cópia independente do vídeo)
+      const bg = bgVideoRef.current;
+      if (bg && Math.abs(bg.currentTime - videoRef.current.currentTime) > 0.25) {
+        bg.currentTime = videoRef.current.currentTime;
+      }
     }
   };
 
   const handlePlay = () => {
     if (topVideoRef.current) topVideoRef.current.play().catch(() => {});
+    if (bgVideoRef.current && videoRef.current) {
+      bgVideoRef.current.currentTime = videoRef.current.currentTime;
+      bgVideoRef.current.play().catch(() => {});
+    }
     setIsPlaying(true);
   };
 
   const handlePause = () => {
     if (topVideoRef.current) topVideoRef.current.pause();
+    if (bgVideoRef.current) bgVideoRef.current.pause();
     setIsPlaying(false);
   };
+
+  const handleLoadedMetadata = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const v = e.currentTarget;
+    if (v.videoWidth && v.videoHeight) setVideoDims({ w: v.videoWidth, h: v.videoHeight });
+  };
+
+  const targetBoxAR = (() => {
+    const ar = style.aspect_ratio || "9:16";
+    const [bw, bh] = ar === "4:5" ? [4, 5] : ar === "1:1" ? [1, 1] : ar === "16:9" ? [16, 9] : [9, 16];
+    return bw / bh;
+  })();
+
+  // Espelha o BLUR_BG_MIN_VISIBLE do backend: formato muito diferente do original
+  // ⇒ vídeo inteiro centralizado sobre fundo desfocado, em vez de recortar.
+  const useBlurBg = (() => {
+    if (!videoDims) return false;
+    const vidAR = videoDims.w / videoDims.h;
+    if (targetBoxAR <= vidAR) return false; // horizontal → 9:16 continua recortando no rosto
+    return vidAR / targetBoxAR < 0.5;
+  })();
+
+  // Espelha o corte inteligente do render: quando o preview precisa cortar a ALTURA
+  // do vídeo (object-cover), a janela fica ancorada em 35% do frame (linha do rosto
+  // em vídeo falado) — mesma conta do SMART_CROP_Y do backend.
+  const smartObjectPosition = (() => {
+    if (!videoDims) return "center center";
+    const boxAR = targetBoxAR;
+    const vidAR = videoDims.w / videoDims.h;
+    if (vidAR >= boxAR) return "center center"; // corta largura: mantém centro
+    // corta altura: escala cover, janela centrada em 35% da altura escalada
+    const scaledH = 1 / vidAR * boxAR; // altura do vídeo em unidades de "altura da caixa"
+    const overflow = scaledH - 1;
+    if (overflow <= 0.001) return "center center";
+    const y = Math.max(0, Math.min(overflow, scaledH * 0.35 - 0.5));
+    return `center ${((y / overflow) * 100).toFixed(1)}%`;
+  })();
 
   const handleVideoError = (e: React.SyntheticEvent<HTMLVideoElement>) => {
     const target = e.currentTarget;
@@ -175,6 +238,9 @@ export default function EditorPage({
     }
     if (topVideoRef.current) {
       topVideoRef.current.currentTime = newTime;
+    }
+    if (bgVideoRef.current) {
+      bgVideoRef.current.currentTime = newTime;
     }
   };
 
@@ -255,7 +321,13 @@ export default function EditorPage({
   const enabledCuts = localCuts.filter((c) => c.enabled);
   const activeCutIdx = enabledCuts.findIndex((c) => currentTime >= c.start && currentTime <= c.end);
   const zoomIndex = activeCutIdx !== -1 ? activeCutIdx : activeSubIndex;
-  const isSegmentZoomed = style.zoom_enabled && zoomIndex !== -1 && zoomIndex % 2 === 1;
+  // Sem zoom no 16:9 (YouTube) e no modo fundo desfocado — igual ao render final
+  const isSegmentZoomed =
+    style.zoom_enabled &&
+    style.aspect_ratio !== "16:9" &&
+    !useBlurBg &&
+    zoomIndex !== -1 &&
+    zoomIndex % 2 === 1;
   const currentZoomScale = isSegmentZoomed ? 1.18 : 1.0;
 
   // Subtitle Drag & Drop
@@ -367,17 +439,41 @@ export default function EditorPage({
         : { start: seg.start, end: seg.end, enabled: false };
     });
 
+  // Durante a edição só SALVA os cortes (reprocess=false, sem FFmpeg). O preview já
+  // mostra o resultado na hora pulando os trechos removidos; o vídeo limpo só é
+  // re-renderizado uma única vez, quando o usuário clica em "Aprovar & ir para Estilo".
   const persistCuts = useCallback(
     (base: CutSegment[], ts: number, te: number) => {
-      setIsReprocessing(true);
+      cutsDirtyRef.current = true;
       if (cutTimer.current) clearTimeout(cutTimer.current);
       cutTimer.current = setTimeout(async () => {
         try {
-          await updateCuts(jobId, computeEffectiveCuts(base, ts, te));
-        } catch {
-          setIsReprocessing(false);
+          await updateCuts(jobId, computeEffectiveCuts(base, ts, te), false);
+        } catch (err) {
+          console.error(err);
         }
       }, 700);
+    },
+    [jobId]
+  );
+
+  // Sair da aba Corte com edições pendentes = dispara o ÚNICO reprocessamento real.
+  // Quando o backend termina, o useEffect acima recarrega a transcrição já
+  // sincronizada com o vídeo cortado — a legenda entra certinha na aba Estilo.
+  const leaveCorteTab = useCallback(
+    (target: "estilo" | "visual") => {
+      setActiveTab(target);
+      if (!cutsDirtyRef.current) return;
+      cutsDirtyRef.current = false;
+      if (cutTimer.current) clearTimeout(cutTimer.current);
+      sawBusyRef.current = false;
+      setIsReprocessing(true);
+      const te = trimEndRef.current || corteDurationRef.current;
+      updateCuts(jobId, computeEffectiveCuts(localCutsRef.current, trimStartRef.current, te), true).catch((err) => {
+        console.error(err);
+        cutsDirtyRef.current = true;
+        setIsReprocessing(false);
+      });
     },
     [jobId]
   );
@@ -459,6 +555,31 @@ export default function EditorPage({
     }
   };
 
+  // Remove uma faixa [a,b] do meio do vídeo: fatia os blocos que ela atravessa e
+  // desliga só o pedaço marcado (vira bloco vermelho, clicável pra desfazer).
+  const handleRemoveRange = useCallback(
+    (a: number, b: number) => {
+      const lo = Math.min(a, b);
+      const hi = Math.max(a, b);
+      if (hi - lo < 0.15) return; // arrasto muito curto = clique acidental
+      const r2 = (v: number) => Math.round(v * 100) / 100;
+      const result: CutSegment[] = [];
+      for (const seg of localCutsRef.current) {
+        const s = Math.max(seg.start, lo);
+        const e = Math.min(seg.end, hi);
+        if (!seg.enabled || e - s <= 0.05) {
+          result.push(seg);
+          continue;
+        }
+        if (s - seg.start > 0.05) result.push({ start: seg.start, end: r2(s), enabled: true });
+        result.push({ start: r2(s), end: r2(e), enabled: false });
+        if (seg.end - e > 0.05) result.push({ start: r2(e), end: seg.end, enabled: true });
+      }
+      handleUpdateCutSegment(result);
+    },
+    [handleUpdateCutSegment]
+  );
+
   const handleRemoveCutSegment = (index: number) => {
     if (localCuts.length <= 1) return;
     const updated = localCuts.filter((_, i) => i !== index);
@@ -487,6 +608,9 @@ export default function EditorPage({
       } else if (dragKind === "end") {
         setTrimEndValue(t, { persist: false });
         handleSeek(Math.max(t, trimStartRef.current + 0.2));
+      } else if (dragKind === "remove") {
+        removeSelRef.current = { a: removeAnchorRef.current, b: t };
+        setRemoveSel(removeSelRef.current);
       } else {
         handleSeek(t);
       }
@@ -494,6 +618,12 @@ export default function EditorPage({
     const onUp = () => {
       if (dragKind === "start" || dragKind === "end") {
         persistCuts(localCutsRef.current, trimStartRef.current, trimEndRef.current);
+      } else if (dragKind === "remove") {
+        const sel = removeSelRef.current;
+        if (sel) handleRemoveRange(sel.a, sel.b);
+        removeSelRef.current = null;
+        setRemoveSel(null);
+        setRemoveMode(false);
       }
       setDragKind(null);
     };
@@ -505,7 +635,54 @@ export default function EditorPage({
     };
     // handleSeek é estável o suficiente (usa refs); evitamos re-subscrever a cada render
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dragKind, timeFromClientX, setTrimStartValue, setTrimEndValue, persistCuts]);
+  }, [dragKind, timeFromClientX, setTrimStartValue, setTrimEndValue, persistCuts, handleRemoveRange]);
+
+  // CORTE INSTANTÂNEO NO PREVIEW: enquanto toca na aba Corte, pula na hora os
+  // trechos removidos (vermelhos) e as pontas fora do trim — o usuário vê o vídeo
+  // "já cortado" sem esperar nenhum processamento.
+  useEffect(() => {
+    if (!isPlaying || activeTab !== "corte") return;
+    let raf = 0;
+    const tick = () => {
+      const v = videoRef.current;
+      if (v && !v.paused && !v.seeking) {
+        const t = v.currentTime;
+        const ts = trimStartRef.current;
+        const te = trimEndRef.current || corteDurationRef.current;
+        const raw = localCutsRef.current
+          .filter((c) => c.enabled)
+          .map((c) => ({ s: Math.max(c.start, ts), e: Math.min(c.end, te) }))
+          .filter((r) => r.e - r.s > 0.05);
+        // Emenda só blocos praticamente colados (< 0.12s): seek ali não vale a pena.
+        // Todos os outros vãos (respiros e trechos removidos) são pulados — o preview
+        // toca igual ao vídeo final. O seek é rápido porque o normalized.mp4 tem
+        // keyframe a cada 1s (ver upload.py).
+        const ranges: { s: number; e: number }[] = [];
+        for (const r of raw) {
+          const last = ranges[ranges.length - 1];
+          if (last && r.s - last.e < 0.12) last.e = r.e;
+          else ranges.push({ ...r });
+        }
+        if (ranges.length) {
+          const inside = ranges.some((r) => t >= r.s - 0.04 && t < r.e);
+          if (!inside) {
+            const next = ranges.find((r) => r.s > t);
+            if (next) {
+              v.currentTime = next.s + 0.01;
+            } else {
+              // passou do último trecho mantido: pausa e volta pro começo
+              v.pause();
+              v.currentTime = ranges[0].s;
+              setIsPlaying(false);
+            }
+          }
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [isPlaying, activeTab]);
 
   const handleGradeChange = useCallback(
     (key: keyof ColorGradeOptions, value: number) => {
@@ -879,7 +1056,7 @@ export default function EditorPage({
               <span>✂️</span> FASE 1 Corte
             </button>
             <button
-              onClick={() => setActiveTab("estilo")}
+              onClick={() => leaveCorteTab("estilo")}
               className={`flex items-center gap-2 rounded-full px-5 py-1.5 text-xs font-semibold transition-all ${
                 activeTab === "estilo"
                   ? "bg-brand-gradient text-[#0a0a0a] shadow-lg shadow-emerald-500/20 scale-[1.02]"
@@ -889,7 +1066,7 @@ export default function EditorPage({
               <span>🎨</span> Estilo
             </button>
             <button
-              onClick={() => setActiveTab("visual")}
+              onClick={() => leaveCorteTab("visual")}
               className={`flex items-center gap-2 rounded-full px-5 py-1.5 text-xs font-semibold transition-all ${
                 activeTab === "visual"
                   ? "bg-brand-gradient text-[#0a0a0a] shadow-lg shadow-emerald-500/20 scale-[1.02]"
@@ -1073,13 +1250,35 @@ export default function EditorPage({
                         {formatDuration(Math.max(0, dispTrimEnd - dispTrimStart))} / {formatDuration(corteDuration)}
                       </span>
                     </div>
-                    <button
-                      onClick={handleAddManualCut}
-                      className="rounded-lg border border-[#242424] px-2.5 py-1 text-[11px] font-medium text-[#9a9a9a] transition hover:border-emerald-500/40 hover:text-emerald-300"
-                    >
-                      ✂ Dividir aqui
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={handleAddManualCut}
+                        className="rounded-lg border border-[#242424] px-2.5 py-1 text-[11px] font-medium text-[#9a9a9a] transition hover:border-emerald-500/40 hover:text-emerald-300"
+                      >
+                        ✂ Dividir aqui
+                      </button>
+                      <button
+                        onClick={() => {
+                          setRemoveMode((m) => !m);
+                          setRemoveSel(null);
+                          removeSelRef.current = null;
+                        }}
+                        className={`rounded-lg border px-2.5 py-1 text-[11px] font-medium transition ${
+                          removeMode
+                            ? "border-rose-400 bg-rose-500/15 text-rose-300"
+                            : "border-[#242424] text-[#9a9a9a] hover:border-rose-500/40 hover:text-rose-300"
+                        }`}
+                      >
+                        🗑 Remover trecho
+                      </button>
+                    </div>
                   </div>
+
+                  {removeMode && (
+                    <div className="mb-3 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[11px] text-rose-200">
+                      <b className="font-semibold">Modo remover:</b> arraste na linha do tempo por cima da parte errada. Ao soltar, ela sai do vídeo. Clique num bloco vermelho pra desfazer.
+                    </div>
+                  )}
 
                   <div className="relative w-full overflow-x-auto select-none pt-5 pb-1 min-w-0">
                     <div
@@ -1106,10 +1305,21 @@ export default function EditorPage({
                       {/* Track interativa */}
                       <div
                         onPointerDown={(e) => {
+                          if (removeMode) {
+                            const t = timeFromClientX(e.clientX);
+                            removeAnchorRef.current = t;
+                            removeSelRef.current = { a: t, b: t };
+                            setRemoveSel(removeSelRef.current);
+                            videoRef.current?.pause();
+                            setDragKind("remove");
+                            return;
+                          }
                           handleSeek(timeFromClientX(e.clientX));
                           setDragKind("playhead");
                         }}
-                        className="relative h-20 w-full rounded-lg bg-[#0a0a0a] border border-[#1f1f1f] overflow-hidden cursor-pointer"
+                        className={`relative h-20 w-full rounded-lg bg-[#0a0a0a] border overflow-hidden ${
+                          removeMode ? "border-rose-500/40 cursor-crosshair" : "border-[#1f1f1f] cursor-pointer"
+                        }`}
                       >
                         {/* Waveform sutil */}
                         <div className="absolute inset-0 flex items-center justify-between gap-[2px] px-1 opacity-[0.18] pointer-events-none">
@@ -1132,8 +1342,12 @@ export default function EditorPage({
                           return (
                             <div
                               key={`cut-${i}`}
-                              onPointerDown={(e) => e.stopPropagation()}
+                              onPointerDown={(e) => {
+                                // No modo remover, deixa o arraste passar pra track marcar a faixa
+                                if (!removeMode) e.stopPropagation();
+                              }}
                               onClick={(e) => {
+                                if (removeMode) return;
                                 e.stopPropagation();
                                 handleSeek(cut.start);
                                 handleToggleCut(i);
@@ -1168,10 +1382,11 @@ export default function EditorPage({
                         {/* Alça de INÍCIO */}
                         <div
                           onPointerDown={(e) => {
+                            if (removeMode) return;
                             e.stopPropagation();
                             setDragKind("start");
                           }}
-                          className="group absolute inset-y-0 z-40 w-5 -ml-2.5 cursor-ew-resize"
+                          className={`group absolute inset-y-0 z-40 w-5 -ml-2.5 cursor-ew-resize ${removeMode ? "pointer-events-none" : ""}`}
                           style={{ left: `${(dispTrimStart / corteDuration) * 100}%` }}
                         >
                           <div className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 bg-emerald-400" />
@@ -1184,10 +1399,11 @@ export default function EditorPage({
                         {/* Alça de FIM */}
                         <div
                           onPointerDown={(e) => {
+                            if (removeMode) return;
                             e.stopPropagation();
                             setDragKind("end");
                           }}
-                          className="group absolute inset-y-0 z-40 w-5 -ml-2.5 cursor-ew-resize"
+                          className={`group absolute inset-y-0 z-40 w-5 -ml-2.5 cursor-ew-resize ${removeMode ? "pointer-events-none" : ""}`}
                           style={{ left: `${(dispTrimEnd / corteDuration) * 100}%` }}
                         >
                           <div className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 bg-emerald-400" />
@@ -1196,6 +1412,17 @@ export default function EditorPage({
                             {formatTime(dispTrimEnd)}
                           </span>
                         </div>
+
+                        {/* Seleção do modo remover (faixa vermelha enquanto arrasta) */}
+                        {removeSel && (
+                          <div
+                            className="absolute inset-y-0 z-30 border-x-2 border-rose-400 bg-rose-500/30 pointer-events-none"
+                            style={{
+                              left: `${(Math.min(removeSel.a, removeSel.b) / corteDuration) * 100}%`,
+                              width: `${(Math.abs(removeSel.b - removeSel.a) / corteDuration) * 100}%`,
+                            }}
+                          />
+                        )}
 
                         {/* Playhead */}
                         <div
@@ -1211,9 +1438,9 @@ export default function EditorPage({
                   {/* Rodapé */}
                   <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                     <span className="text-[11px] text-[#6b6b6b]">
-                      Arraste as <b className="font-semibold text-emerald-400">alças</b> pra definir início e fim · clique num bloco pra remover um trecho
+                      Arraste as <b className="font-semibold text-emerald-400">alças</b> pra definir início e fim · <b className="font-semibold text-rose-300">🗑 Remover trecho</b> pra tirar um erro do meio · o preview já toca cortado · a legenda entra na aba Estilo
                     </span>
-                    <button onClick={() => setActiveTab("estilo")} className="btn-primary btn-pill text-xs font-bold">
+                    <button onClick={() => leaveCorteTab("estilo")} className="btn-primary btn-pill text-xs font-bold">
                       Aprovar &amp; ir para Estilo →
                     </button>
                   </div>
@@ -2089,7 +2316,7 @@ export default function EditorPage({
           <div className="sticky top-16 space-y-3">
             <div className="glass-panel overflow-hidden p-3 flex flex-col items-center justify-center max-h-[calc(100vh-100px)]">
               <div className="mb-2 w-full flex items-center justify-between text-[11px] text-[#a8a8a8]">
-                <span>📱 Prévia Ao Vivo 9:16</span>
+                <span>📱 Prévia Ao Vivo {style.aspect_ratio || "9:16"}</span>
                 <span className="text-emerald-400 font-bold">
                   {isPlaying ? "▶ Tocando" : "⏸ Pausado"}
                 </span>
@@ -2173,26 +2400,57 @@ export default function EditorPage({
                 ) : (
                   /* FULLSCREEN PREVIEW */
                   currentVideoPath ? (
-                    <video
-                      ref={videoRef}
-                      key={currentVideoPath}
-                      src={getVideoUrl(currentVideoPath)}
-                      controls
-                      onPlay={handlePlay}
-                      onPause={handlePause}
-                      onTimeUpdate={handleTimeUpdate}
-                      onError={handleVideoError}
-                      className="h-full w-full object-cover transition-none"
-                      style={{
-                        filter: cssGradeFilter,
-                        transform: `scale(${currentZoomScale}) rotate(${style.rotation || 0}deg)`,
-                      }}
-                    />
+                    <>
+                      {/* Fundo desfocado do próprio vídeo quando o formato não bate
+                          (ex.: vertical em 16:9) — mesmo tratamento do render final */}
+                      {useBlurBg && (
+                        <video
+                          ref={bgVideoRef}
+                          key={`bg-${currentVideoPath}`}
+                          src={getVideoUrl(currentVideoPath)}
+                          muted
+                          playsInline
+                          className="absolute inset-0 h-full w-full object-cover"
+                          style={{
+                            filter: `${cssGradeFilter} blur(22px) brightness(0.85)`,
+                            transform: `scale(1.15) rotate(${style.rotation || 0}deg)`,
+                          }}
+                        />
+                      )}
+                      <video
+                        ref={videoRef}
+                        key={currentVideoPath}
+                        src={getVideoUrl(currentVideoPath)}
+                        controls
+                        onPlay={handlePlay}
+                        onPause={handlePause}
+                        onTimeUpdate={handleTimeUpdate}
+                        onLoadedMetadata={handleLoadedMetadata}
+                        onError={handleVideoError}
+                        className={`relative z-[1] h-full w-full transition-none ${
+                          useBlurBg ? "object-contain" : "object-cover"
+                        }`}
+                        style={{
+                          filter: cssGradeFilter,
+                          transform: `scale(${currentZoomScale}) rotate(${style.rotation || 0}deg)`,
+                          objectPosition: useBlurBg ? "center center" : smartObjectPosition,
+                        }}
+                      />
+                    </>
                   ) : (
                     <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-xs text-slate-500">
                       {videoError ? <span className="text-rose-400 px-3 text-center">⚠️ {videoError}</span> : <>Carregando vídeo...</>}
                     </div>
                   )
+                )}
+
+                {/* Aviso enquanto o backend aplica os cortes aprovados */}
+                {isReprocessing && activeTab !== "corte" && (
+                  <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 bg-black/70 backdrop-blur-sm">
+                    <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-400" />
+                    <span className="text-xs font-semibold text-emerald-200">Aplicando seus cortes no vídeo…</span>
+                    <span className="text-[10px] text-[#9a9a9a]">A legenda entra sincronizada assim que terminar</span>
+                  </div>
                 )}
 
                 {/* Scrub: arraste no preview pra navegar · clique = play/pause */}
@@ -2207,8 +2465,9 @@ export default function EditorPage({
                   />
                 )}
 
-                {/* Subtitle Overlay */}
-                {style.subtitle_style === "basic" && activeSub && (
+                {/* Subtitle Overlay — só DEPOIS dos cortes (na aba Corte a legenda fica
+                    de fora; ela entra na aba Estilo já sincronizada com o vídeo cortado) */}
+                {style.subtitle_style === "basic" && activeSub && activeTab !== "corte" && (
                   <div
                     onMouseDown={handleSubMouseDown}
                     className={`absolute cursor-move select-none -translate-x-1/2 -translate-y-1/2 transition-shadow z-20 ${
@@ -2225,9 +2484,9 @@ export default function EditorPage({
                         fontSize: `${Math.max(12, Math.round((style.subtitle_font_size || 58) * 0.23))}px`,
                         color: style.subtitle_color,
                         backgroundColor: style.subtitle_bg_color !== "transparent" && style.subtitle_bg_color !== "none" && style.subtitle_bg_color !== "" ? style.subtitle_bg_color : "transparent",
-                        letterSpacing: `${style.subtitle_letter_spacing || 0}px`,
+                        letterSpacing: `${((style.subtitle_letter_spacing || 0) * 0.23).toFixed(2)}px`,
                         fontFamily:
-                          style.subtitle_font === "TikTok Medium" ? "'Proxima Nova', 'TikTok Display', sans-serif"
+                          style.subtitle_font === "TikTok Medium" ? "'TikTok Sans', 'Proxima Nova', sans-serif"
                           : style.subtitle_font === "Helvetica" ? "'Helvetica Neue', Helvetica, Arial, sans-serif"
                           : style.subtitle_font === "Montserrat" ? "'Montserrat', sans-serif"
                           : style.subtitle_font === "Lato" ? "'Lato', sans-serif"

@@ -82,9 +82,21 @@ def apply_color_grade(
     cmd = [ffmpeg_exe, "-y", "-i", input_path]
     if vf:
         cmd.extend(["-vf", vf])
+    else:
+        # Nada a aplicar: copia o stream em vez de re-encodar de graça
+        # (cada re-encode desnecessário some com detalhe do vídeo).
+        cmd.extend(["-c", "copy", output_path])
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            if result.returncode == 0:
+                return output_path
+        except Exception:
+            pass
+        cmd = [ffmpeg_exe, "-y", "-i", input_path]
 
     cmd.extend([
-        "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+        "-pix_fmt", "yuv420p",
         "-c:a", "copy",
         output_path
     ])

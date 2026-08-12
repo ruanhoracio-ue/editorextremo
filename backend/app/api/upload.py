@@ -48,6 +48,10 @@ def normalize_video_orientation(input_path: str, output_path: str) -> str:
     """
     Etapa 0: Fast physical orientation normalization right after upload.
     Forces strict CFR 30.00 FPS and aligned AAC audio to eliminate VFR drift.
+
+    PRESERVA o formato original (vertical continua vertical, horizontal/YouTube
+    continua horizontal) — só limita o lado maior a 1920px. O corte pra cada
+    formato acontece apenas no render final, com enquadramento inteligente.
     """
     ffmpeg_exe = get_ffmpeg_binary()
     cmd = [
@@ -55,8 +59,16 @@ def normalize_video_orientation(input_path: str, output_path: str) -> str:
         "-autorotate",
         "-i", input_path,
         "-r", "30", "-vsync", "cfr",
-        "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1",
-        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
+        "-vf", "scale='trunc(iw*min(1,1920/max(iw,ih))/2)*2':'trunc(ih*min(1,1920/max(iw,ih))/2)*2'"
+               ":flags=lanczos,setsar=1",
+        # Este é o arquivo-MESTRE: tudo (corte, color grade, render) deriva dele e
+        # re-encoda por cima. CRF baixo aqui evita perda de geração acumulada —
+        # com crf 26/ultrafast o vídeo já chegava borrado na exportação.
+        # Keyframe a cada 1s (30 frames): o preview de corte pula trechos removidos
+        # com seek instantâneo — com GOP longo cada pulo dava uma engasgada visível.
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+        "-pix_fmt", "yuv420p",
+        "-g", "30", "-keyint_min", "30",
         "-c:a", "aac", "-b:a", "128k", "-af", "aresample=async=1",
         output_path
     ]
