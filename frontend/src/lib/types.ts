@@ -96,6 +96,8 @@ export interface StyleOptions {
   aspect_ratio?: "9:16" | "4:5" | "1:1" | "16:9";
   /** Rotação do vídeo em graus (0, 90, 180, 270) — aplicada no preview e no render final */
   rotation?: number;
+  /** Altura do vídeo original que fica centrada no recorte (0 = topo, 100 = base). */
+  crop_focus_y?: number;
 }
 
 export interface BRollMediaOption {
@@ -175,6 +177,7 @@ export const DEFAULT_STYLE_OPTIONS: StyleOptions = {
   split_screen_framing_y: 50.0,
   split_screen_framing_y_bottom: 50.0,
   rotation: 0,
+  crop_focus_y: 35.0,
 };
 
 export const STATUS_LABELS: Record<JobStatus, string> = {

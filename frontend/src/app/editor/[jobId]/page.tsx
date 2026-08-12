@@ -78,8 +78,12 @@ export default function EditorPage({
   const cutTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const splitInputRef = useRef<HTMLInputElement>(null);
   // Scrub por arraste no preview (clique = play/pause, arraste horizontal = navegar)
-  const scrubRef = useRef<{ active: boolean; startX: number; startT: number; moved: boolean; wasPlaying: boolean }>({
-    active: false, startX: 0, startT: 0, moved: false, wasPlaying: false,
+  const scrubRef = useRef<{
+    active: boolean; startX: number; startY: number; startT: number;
+    startFocus: number; axis: null | "seek" | "reframe"; moved: boolean; wasPlaying: boolean;
+  }>({
+    active: false, startX: 0, startY: 0, startT: 0,
+    startFocus: 35, axis: null, moved: false, wasPlaying: false,
   });
   // Refs espelhando o estado, pra os listeners de drag lerem sempre o valor mais recente
   const localCutsRef = useRef<CutSegment[]>([]);
@@ -219,20 +223,25 @@ export default function EditorPage({
     return vidAR / targetBoxAR < 0.5;
   })();
 
-  // Espelha o corte inteligente do render: quando o preview precisa cortar a ALTURA
-  // do vídeo (object-cover), a janela fica ancorada em 35% do frame (linha do rosto
-  // em vídeo falado) — mesma conta do SMART_CROP_Y do backend.
-  const smartObjectPosition = (() => {
-    if (!videoDims) return "center center";
-    const boxAR = targetBoxAR;
+  // Quanto da ALTURA do vídeo sobra fora do quadro neste formato (em "alturas de
+  // caixa"). Zero = o formato não corta a altura, então não há o que enquadrar.
+  const cropOverflowY = (() => {
+    if (!videoDims || useBlurBg) return 0;
     const vidAR = videoDims.w / videoDims.h;
-    if (vidAR >= boxAR) return "center center"; // corta largura: mantém centro
-    // corta altura: escala cover, janela centrada em 35% da altura escalada
-    const scaledH = 1 / vidAR * boxAR; // altura do vídeo em unidades de "altura da caixa"
-    const overflow = scaledH - 1;
-    if (overflow <= 0.001) return "center center";
-    const y = Math.max(0, Math.min(overflow, scaledH * 0.35 - 0.5));
-    return `center ${((y / overflow) * 100).toFixed(1)}%`;
+    if (vidAR >= targetBoxAR) return 0; // corta a largura, não a altura
+    return (1 / vidAR) * targetBoxAR - 1;
+  })();
+  const canReframe = cropOverflowY > 0.001;
+
+  // Espelha o recorte do render: a janela fica centrada em crop_focus_y% da altura
+  // do vídeo — mesma conta do _crop_y_expr do backend.
+  const smartObjectPosition = (() => {
+    if (!canReframe) return "center center";
+    const vidAR = videoDims!.w / videoDims!.h;
+    const scaledH = (1 / vidAR) * targetBoxAR;
+    const focus = (style.crop_focus_y ?? 35) / 100;
+    const y = Math.max(0, Math.min(cropOverflowY, scaledH * focus - 0.5));
+    return `center ${((y / cropOverflowY) * 100).toFixed(1)}%`;
   })();
 
   const handleVideoError = (e: React.SyntheticEvent<HTMLVideoElement>) => {
@@ -396,7 +405,10 @@ export default function EditorPage({
     scrubRef.current = {
       active: true,
       startX: e.clientX,
+      startY: e.clientY,
       startT: videoRef.current.currentTime,
+      startFocus: style.crop_focus_y ?? 35,
+      axis: null,
       moved: false,
       wasPlaying: !videoRef.current.paused,
     };
@@ -406,17 +418,34 @@ export default function EditorPage({
     const s = scrubRef.current;
     if (!s.active || !videoRef.current || !videoContainerRef.current) return;
     const dx = e.clientX - s.startX;
-    if (!s.moved && Math.abs(dx) < 5) return;
+    const dy = e.clientY - s.startY;
+
+    // Decide o eixo no primeiro movimento e trava nele até soltar: horizontal
+    // navega no vídeo, vertical reenquadra o corte do formato.
+    if (!s.axis) {
+      if (Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
+      s.axis = Math.abs(dy) > Math.abs(dx) && canReframe ? "reframe" : "seek";
+      s.moved = true;
+      if (s.axis === "seek") {
+        videoRef.current.pause();
+        setIsPlaying(false);
+      }
+    }
+
+    const rect = videoContainerRef.current.getBoundingClientRect();
+
+    if (s.axis === "reframe") {
+      // Arrastar a altura toda percorre toda a faixa de enquadramento possível.
+      // Sinal invertido: puxar pra cima mostra a parte de baixo do vídeo.
+      const next = Math.max(0, Math.min(100, s.startFocus - (dy / rect.height) * 100));
+      updateStyleAndPersist((st) => ({ ...st, crop_focus_y: Math.round(next * 10) / 10 }));
+      return;
+    }
+
     const dur = videoRef.current.duration;
     if (!dur || !isFinite(dur)) return;
-    if (!s.moved) {
-      s.moved = true;
-      videoRef.current.pause();
-      setIsPlaying(false);
-    }
     // Arrastar a largura toda do preview = percorrer o vídeo inteiro
-    const width = videoContainerRef.current.getBoundingClientRect().width;
-    const nt = Math.max(0, Math.min(dur, s.startT + (dx / width) * dur));
+    const nt = Math.max(0, Math.min(dur, s.startT + (dx / rect.width) * dur));
     videoRef.current.currentTime = nt;
     if (topVideoRef.current) topVideoRef.current.currentTime = nt;
     setCurrentTime(nt);
@@ -426,9 +455,11 @@ export default function EditorPage({
     const s = scrubRef.current;
     if (!s.active) return;
     s.active = false;
+    const axis = s.axis;
+    s.axis = null;
     if (!s.moved) {
       togglePlayPause();
-    } else if (s.wasPlaying && videoRef.current) {
+    } else if (axis === "seek" && s.wasPlaying && videoRef.current) {
       videoRef.current.play().catch(() => {});
       setIsPlaying(true);
     }
@@ -2223,6 +2254,44 @@ export default function EditorPage({
                     <span className="text-[11px] text-[#a8a8a8]">Marque os formatos que deseja exportar</span>
                   </div>
 
+                  {/* Enquadramento do recorte — só aparece quando o formato escolhido
+                      realmente corta a altura do vídeo (senão não há o que ajustar) */}
+                  {canReframe && (
+                    <div className="rounded-xl border border-[#242424] bg-[#0a0a0a] p-4">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <label className="text-[13px] font-semibold text-[#ededed]">
+                          ↕️ Enquadramento no {style.aspect_ratio || "9:16"}
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-[11px] text-emerald-400">
+                            {Math.round(style.crop_focus_y ?? 35)}%
+                          </span>
+                          <button
+                            onClick={() => updateStyleAndPersist((s) => ({ ...s, crop_focus_y: 35 }))}
+                            className="rounded-md border border-[#242424] px-2 py-0.5 text-[10px] font-medium text-[#9a9a9a] transition hover:border-[#333] hover:text-white"
+                          >
+                            padrão
+                          </button>
+                        </div>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="0.5"
+                        value={style.crop_focus_y ?? 35}
+                        onChange={(e) =>
+                          updateStyleAndPersist((s) => ({ ...s, crop_focus_y: parseFloat(e.target.value) }))
+                        }
+                        className="w-full accent-emerald-400 cursor-pointer"
+                      />
+                      <p className="mt-1.5 text-[10px] text-[#737373]">
+                        Menor = mostra mais do topo · maior = mais da base. Você também pode
+                        <b className="font-semibold text-[#a8a8a8]"> arrastar o preview pra cima ou pra baixo</b>.
+                      </p>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {[
                       { id: "9:16", label: "📱 9:16 (1080x1920)", desc: "Reels / TikTok / Shorts" },
@@ -2517,7 +2586,11 @@ export default function EditorPage({
                     onPointerMove={handleScrubMove}
                     onPointerUp={handleScrubEnd}
                     onPointerCancel={handleScrubEnd}
-                    title="Arraste para os lados para navegar no vídeo · clique para tocar/pausar"
+                    title={
+                      canReframe
+                        ? "Arraste para os lados = navegar no vídeo · para cima/baixo = ajustar o enquadramento · clique = tocar/pausar"
+                        : "Arraste para os lados para navegar no vídeo · clique para tocar/pausar"
+                    }
                     className="absolute inset-x-0 top-0 bottom-14 z-10 cursor-grab active:cursor-grabbing"
                   />
                 )}

@@ -115,6 +115,10 @@ class StyleOptions(BaseModel):
     aspect_ratio: str = Field(default="9:16")
     # Rotação do vídeo em graus (0, 90, 180, 270) — aplicada no render final
     rotation: int = Field(default=0)
+    # Enquadramento vertical ao recortar para outro formato: que altura do vídeo
+    # original fica no centro do recorte (0 = topo, 100 = base). 35% ≈ linha do
+    # rosto em vídeo de pessoa falando.
+    crop_focus_y: float = Field(default=35.0, ge=0.0, le=100.0)
 
     zoom_enabled: bool = True
     zoom_intensity: float = Field(default=1.15, ge=1.0, le=2.0)

@@ -56,10 +56,20 @@ def format_caption_text(
     return "\\N".join(lines)
 
 
-# Corte vertical "inteligente" (sem dependência de visão computacional): em vídeo
-# de pessoa falando o rosto fica na linha do terço superior, então ao cortar a altura
-# centramos a janela em 35% do frame em vez do meio — não decapita em 1:1/4:5/16:9.
-SMART_CROP_Y = "max(0,min(in_h-out_h,in_h*0.35-out_h/2))"
+# Enquadramento vertical ao recortar para outro formato. O padrão (35% da altura)
+# fica na linha do rosto em vídeo de pessoa falando — não decapita em 1:1/4:5/16:9 —
+# e o usuário ajusta arrastando o preview (style.crop_focus_y).
+DEFAULT_CROP_FOCUS_Y = 35.0
+
+
+def _crop_y_expr(style_options) -> str:
+    focus = getattr(style_options, "crop_focus_y", DEFAULT_CROP_FOCUS_Y)
+    try:
+        focus = float(focus)
+    except (TypeError, ValueError):
+        focus = DEFAULT_CROP_FOCUS_Y
+    frac = max(0.0, min(100.0, focus)) / 100.0
+    return f"max(0,min(in_h-out_h,in_h*{frac:.4f}-out_h/2))"
 
 # Quando o formato de destino é MUITO diferente do original (ex.: vídeo vertical
 # exportado em 16:9, ou horizontal exportado em 9:16), cortar destruiria o
@@ -163,6 +173,7 @@ def render_final_video(
     if src_dims and rotation in (90, 270):
         src_dims = (src_dims[1], src_dims[0])
     use_blur_bg = _needs_blur_background(src_dims, canvas_w, canvas_h)
+    crop_y = _crop_y_expr(style_options)
 
     # --- Split Screen Layout (Clean 50/50 vertical stack with framing Y) ---
     if style_options.layout == "split_screen" and style_options.split_screen_image:
@@ -188,14 +199,14 @@ def render_final_video(
         else:
             filters.append(
                 f"{main_src}scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=increase:flags=lanczos,"
-                f"crop={canvas_w}:{canvas_h}:(in_w-out_w)/2:'{SMART_CROP_Y}',setsar=1[base_canvas]"
+                f"crop={canvas_w}:{canvas_h}:(in_w-out_w)/2:'{crop_y}',setsar=1[base_canvas]"
             )
     elif use_blur_bg:
         filters.append(_blur_bg_filter(main_src, canvas_w, canvas_h, "base_canvas"))
     else:
         filters.append(
             f"{main_src}scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=increase:flags=lanczos,"
-            f"crop={canvas_w}:{canvas_h}:(in_w-out_w)/2:'{SMART_CROP_Y}',setsar=1[base_canvas]"
+            f"crop={canvas_w}:{canvas_h}:(in_w-out_w)/2:'{crop_y}',setsar=1[base_canvas]"
         )
 
     # --- Dynamic Zoom Filter ---
@@ -300,9 +311,10 @@ def _simple_render(
     if rotation in rot_map:
         vf_parts.append(rot_map[rotation])
 
+    crop_y = _crop_y_expr(style_options)
     vf_parts.append(
         f"scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=increase:flags=lanczos,"
-        f"crop={canvas_w}:{canvas_h}:(in_w-out_w)/2:'{SMART_CROP_Y}',setsar=1"
+        f"crop={canvas_w}:{canvas_h}:(in_w-out_w)/2:'{crop_y}',setsar=1"
     )
 
     if style_options.subtitle_style == "basic" and transcript:
