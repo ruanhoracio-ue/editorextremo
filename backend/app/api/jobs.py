@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import glob
 import os
 from pathlib import Path
 from typing import List, Optional
@@ -103,6 +104,41 @@ async def update_job_style(job_id: str, body: StyleUpdateRequest):
 
     updated = update_job(job_id, style_options=body.style_options)
     return {"message": "Estilo atualizado com sucesso!", "style_options": updated.style_options}
+
+
+@router.post("/api/jobs/{job_id}/retry")
+async def retry_job(job_id: str):
+    """Retoma um job que travou no meio do processamento.
+
+    Se o app for fechado (ou o Docker parado) durante a transcrição/corte, a thread
+    de processamento morre e o job fica preso no status em que estava, sem saída.
+    Aqui recomeçamos do arquivo enviado originalmente — que é sempre `original.*`,
+    e não o `original_file` do job, que a essa altura pode apontar para um
+    intermediário corrompido pela interrupção.
+    """
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job não encontrado")
+
+    candidates = sorted(glob.glob(str(get_path(job_id, "original.*"))))
+    source = candidates[0] if candidates else None
+    if not source or not os.path.exists(source):
+        raise HTTPException(400, "O vídeo enviado não está mais disponível. Envie o arquivo de novo.")
+
+    # Descarta intermediários possivelmente truncados pela interrupção
+    for leftover in ("normalized.mp4", "cut_video.mp4", "clean_video.mp4", "audio.wav"):
+        path = str(get_path(job_id, leftover))
+        if os.path.exists(path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+    from app.api.upload import run_cleanup_pipeline
+
+    update_job(job_id, original_file=source, status=JobStatus.QUEUED, progress=0, error_message=None)
+    enqueue(get_job(job_id), run_cleanup_pipeline)
+    return {"message": "Processamento reiniciado!", "status": JobStatus.QUEUED}
 
 
 @router.put("/api/jobs/{job_id}/cuts")

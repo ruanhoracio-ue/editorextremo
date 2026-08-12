@@ -9,6 +9,7 @@ import {
   getVideoUrl,
   getDownloadUrl,
   updateCuts,
+  retryJob,
   updateColorGrade,
   uploadSplitImage,
   uploadSplitImages,
@@ -63,6 +64,7 @@ export default function EditorPage({
   const [isDraggingSub, setIsDraggingSub] = useState(false);
   const [copiedTx, setCopiedTx] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
+  const [isRetrying, setIsRetrying] = useState(false);
   // Dimensões reais do vídeo (pro preview cortar igual ao render final)
   const [videoDims, setVideoDims] = useState<{ w: number; h: number } | null>(null);
 
@@ -430,6 +432,21 @@ export default function EditorPage({
       videoRef.current.play().catch(() => {});
       setIsPlaying(true);
     }
+  };
+
+  // Recomeça o processamento quando ele trava (app/Docker fechado no meio, por
+  // exemplo): a thread do backend morre e o job fica parado no status em que estava.
+  const handleRetry = async () => {
+    if (isRetrying) return;
+    setIsRetrying(true);
+    try {
+      await retryJob(jobId);
+      setTimeout(() => refetch(), 800);
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : "Não foi possível recomeçar");
+    }
+    setIsRetrying(false);
   };
 
   const handleRender = async () => {
@@ -1110,7 +1127,14 @@ export default function EditorPage({
         {job.status === "error" && (
           <div className="mb-6 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-200 font-geist">
             <div className="font-bold mb-1">❌ Falha no processamento</div>
-            <p className="text-rose-300/90">{job.error_message || "Erro desconhecido no backend. Tente enviar o vídeo novamente."}</p>
+            <p className="text-rose-300/90">{job.error_message || "Algo deu errado ao processar o vídeo."}</p>
+            <button
+              onClick={handleRetry}
+              disabled={isRetrying}
+              className="mt-3 rounded-lg border border-rose-400/50 bg-rose-500/15 px-3 py-1.5 text-xs font-semibold text-rose-100 transition hover:bg-rose-500/25 disabled:opacity-50"
+            >
+              {isRetrying ? "Recomeçando…" : "🔄 Tentar de novo"}
+            </button>
           </div>
         )}
         {!isCleanReady && job.status !== "error" && (
@@ -1125,6 +1149,13 @@ export default function EditorPage({
             <p className="mt-2 text-xs text-emerald-200/80">
               O vídeo editado aparecerá automaticamente assim que a inteligência concluir o corte.
             </p>
+            <button
+              onClick={handleRetry}
+              disabled={isRetrying}
+              className="mt-2 text-[11px] font-medium text-emerald-300/80 underline underline-offset-2 transition hover:text-emerald-200 disabled:opacity-50"
+            >
+              {isRetrying ? "Recomeçando…" : "Parou de avançar? Recomeçar o processamento"}
+            </button>
           </div>
         )}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-8 items-start w-full min-w-0">

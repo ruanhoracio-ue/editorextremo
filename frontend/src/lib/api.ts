@@ -260,3 +260,12 @@ export function getVideoUrl(path: string): string {
 export function getDownloadUrl(jobId: string, filename: string): string {
   return `${API_BASE}/api/jobs/${jobId}/download/${encodeURIComponent(filename)}`;
 }
+
+/** Recomeça o processamento de um vídeo que travou (app fechado no meio, por exemplo). */
+export async function retryJob(jobId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/jobs/${jobId}/retry`, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(extractDetail(err) || "Não foi possível recomeçar o processamento");
+  }
+}
