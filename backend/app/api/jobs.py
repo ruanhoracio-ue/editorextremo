@@ -237,6 +237,27 @@ async def upload_split_image(job_id: str, file: UploadFile = File(...)):
     return {"message": "Mídia de referência salva!", "path": web_url}
 
 
+@router.post("/api/jobs/{job_id}/overlay")
+async def upload_overlay(job_id: str, file: UploadFile = File(...)):
+    """Guarda um anexo (imagem/PNG) para ser sobreposto ao vídeo.
+
+    Só salva o arquivo e devolve a URL; quem monta o objeto do anexo (posição,
+    tamanho, janela de tempo) e persiste no estilo é o editor, igual ao split.
+    """
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job não encontrado")
+
+    ext = os.path.splitext(file.filename or "")[1].lower() or ".png"
+    if ext not in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".mp4", ".mov", ".webm"):
+        raise HTTPException(400, f"Formato de anexo não suportado: {ext}")
+
+    existing = len(glob.glob(str(get_path(job_id, "overlay_*"))))
+    filename = f"overlay_{existing}_{int(os.times().elapsed * 1000) % 100000}{ext}"
+    await save_upload(job_id, filename, file)
+    return {"message": "Anexo salvo!", "src": get_url(job_id, filename)}
+
+
 @router.post("/api/jobs/{job_id}/split-images")
 async def upload_split_images(job_id: str, files: List[UploadFile] = File(...)):
     job = get_job(job_id)

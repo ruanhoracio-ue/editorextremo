@@ -261,6 +261,19 @@ export function getDownloadUrl(jobId: string, filename: string): string {
   return `${API_BASE}/api/jobs/${jobId}/download/${encodeURIComponent(filename)}`;
 }
 
+/** Envia um anexo (imagem/PNG) e devolve a URL para usar em style.overlays. */
+export async function uploadOverlay(jobId: string, file: File): Promise<string> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API_BASE}/api/jobs/${jobId}/overlay`, { method: "POST", body: form });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(extractDetail(err) || "Erro ao enviar o anexo");
+  }
+  const data = await res.json();
+  return data.src as string;
+}
+
 /** Recomeça o processamento de um vídeo que travou (app fechado no meio, por exemplo). */
 export async function retryJob(jobId: string): Promise<void> {
   const res = await fetch(`${API_BASE}/api/jobs/${jobId}/retry`, { method: "POST" });

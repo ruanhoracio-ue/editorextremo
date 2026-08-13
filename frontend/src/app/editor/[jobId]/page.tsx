@@ -10,6 +10,7 @@ import {
   getDownloadUrl,
   updateCuts,
   retryJob,
+  uploadOverlay,
   updateColorGrade,
   uploadSplitImage,
   uploadSplitImages,
@@ -22,6 +23,7 @@ import {
   DEFAULT_STYLE_OPTIONS,
   type StyleOptions,
   type CutSegment,
+  type MediaOverlay,
   type TranscriptSegment,
   type SubtitleTheme,
   type ColorGradeOptions,
@@ -65,6 +67,8 @@ export default function EditorPage({
   const [copiedTx, setCopiedTx] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
+  // Anexo sendo arrastado no preview (índice em style.overlays)
+  const [draggingOverlay, setDraggingOverlay] = useState<number | null>(null);
   // Dimensões reais do vídeo (pro preview cortar igual ao render final)
   const [videoDims, setVideoDims] = useState<{ w: number; h: number } | null>(null);
 
@@ -77,6 +81,7 @@ export default function EditorPage({
   const transcriptTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cutTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const splitInputRef = useRef<HTMLInputElement>(null);
+  const overlayInputRef = useRef<HTMLInputElement>(null);
   // Scrub por arraste no preview (clique = play/pause, arraste horizontal = navegar)
   const scrubRef = useRef<{
     active: boolean; startX: number; startY: number; startT: number;
@@ -822,6 +827,79 @@ export default function EditorPage({
     a.click();
     URL.revokeObjectURL(url);
   };
+
+  // ── Anexos (imagem/PNG sobreposta ao vídeo) ──────────────────────────────
+  const overlays = style.overlays ?? [];
+
+  const patchOverlay = useCallback(
+    (index: number, patch: Partial<MediaOverlay>) => {
+      updateStyleAndPersist((s) => ({
+        ...s,
+        overlays: (s.overlays ?? []).map((o, i) => (i === index ? { ...o, ...patch } : o)),
+      }));
+    },
+    [updateStyleAndPersist]
+  );
+
+  const removeOverlay = useCallback(
+    (index: number) => {
+      updateStyleAndPersist((s) => ({
+        ...s,
+        overlays: (s.overlays ?? []).filter((_, i) => i !== index),
+      }));
+    },
+    [updateStyleAndPersist]
+  );
+
+  const handleOverlayUpload = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = ""; // permite reenviar o mesmo arquivo depois
+      if (!file) return;
+      try {
+        const src = await uploadOverlay(jobId, file);
+        // Entra visível desde o tempo atual do player até o fim, no centro
+        const startAt = Math.max(0, Math.round(currentTime * 10) / 10);
+        const novo: MediaOverlay = {
+          id: `${Date.now()}`,
+          src,
+          x_percent: 50,
+          y_percent: 50,
+          width_percent: 30,
+          start: startAt,
+          end: 0,
+          opacity: 1,
+        };
+        updateStyleAndPersist((s) => ({ ...s, overlays: [...(s.overlays ?? []), novo] }));
+      } catch (err) {
+        console.error(err);
+        alert(err instanceof Error ? err.message : "Não foi possível enviar o anexo");
+      }
+    },
+    [jobId, currentTime, updateStyleAndPersist]
+  );
+
+  // Arrastar o anexo dentro do preview para posicionar
+  useEffect(() => {
+    if (draggingOverlay === null) return;
+    const onMove = (e: PointerEvent) => {
+      const box = videoContainerRef.current?.getBoundingClientRect();
+      if (!box) return;
+      const x = Math.max(0, Math.min(100, ((e.clientX - box.left) / box.width) * 100));
+      const y = Math.max(0, Math.min(100, ((e.clientY - box.top) / box.height) * 100));
+      patchOverlay(draggingOverlay, {
+        x_percent: Math.round(x * 10) / 10,
+        y_percent: Math.round(y * 10) / 10,
+      });
+    };
+    const onUp = () => setDraggingOverlay(null);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, [draggingOverlay, patchOverlay]);
 
   const handleSplitImagesUpload = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1617,6 +1695,126 @@ export default function EditorPage({
                   </div>
                   <input ref={splitInputRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={handleSplitImagesUpload} />
 
+                  {/* ── Anexos (imagem/PNG sobreposto) ── */}
+                  <div className="rounded-2xl border border-[#242424] bg-[#141414] p-5 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <label className="text-[13px] font-semibold text-[#ededed]">📎 Anexos no vídeo</label>
+                        <p className="mt-0.5 text-[10px] text-[#737373]">
+                          Uma imagem ou PNG por cima do vídeo — você escolhe onde fica, o tamanho e por quanto tempo aparece.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => overlayInputRef.current?.click()}
+                        className="whitespace-nowrap rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/20"
+                      >
+                        + Adicionar anexo
+                      </button>
+                    </div>
+                    <input
+                      ref={overlayInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleOverlayUpload}
+                    />
+
+                    {overlays.length === 0 ? (
+                      <p className="rounded-xl border border-dashed border-[#242424] px-3 py-4 text-center text-[11px] text-[#6b6b6b]">
+                        Nenhum anexo ainda. Envie um PNG (com fundo transparente fica melhor) e arraste ele no preview.
+                      </p>
+                    ) : (
+                      <div className="space-y-3">
+                        {overlays.map((ov, i) => (
+                          <div key={ov.id} className="rounded-xl border border-[#1f1f1f] bg-[#0a0a0a] p-3">
+                            <div className="mb-3 flex items-center gap-3">
+                              <img
+                                src={getVideoUrl(ov.src)}
+                                alt=""
+                                className="h-10 w-10 shrink-0 rounded-md border border-[#242424] bg-[#141414] object-contain"
+                              />
+                              <span className="flex-1 text-[11px] text-[#a8a8a8]">
+                                Anexo {i + 1} · arraste no preview para posicionar
+                              </span>
+                              <button
+                                onClick={() => removeOverlay(i)}
+                                className="rounded-md border border-rose-500/30 px-2 py-1 text-[10px] font-medium text-rose-300 transition hover:bg-rose-500/15"
+                              >
+                                remover
+                              </button>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <div className="mb-1 flex justify-between text-[10px] text-[#a8a8a8]">
+                                  <span>Tamanho</span>
+                                  <span className="font-mono text-emerald-400">{Math.round(ov.width_percent)}%</span>
+                                </div>
+                                <input
+                                  type="range" min="2" max="100" step="1"
+                                  value={ov.width_percent}
+                                  onChange={(e) => patchOverlay(i, { width_percent: parseFloat(e.target.value) })}
+                                  className="w-full accent-emerald-400 cursor-pointer"
+                                />
+                              </div>
+                              <div>
+                                <div className="mb-1 flex justify-between text-[10px] text-[#a8a8a8]">
+                                  <span>Opacidade</span>
+                                  <span className="font-mono text-emerald-400">{Math.round(ov.opacity * 100)}%</span>
+                                </div>
+                                <input
+                                  type="range" min="0" max="1" step="0.05"
+                                  value={ov.opacity}
+                                  onChange={(e) => patchOverlay(i, { opacity: parseFloat(e.target.value) })}
+                                  className="w-full accent-emerald-400 cursor-pointer"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="mt-3 grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="mb-1 block text-[10px] text-[#a8a8a8]">Aparece em (s)</label>
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="number" min="0" step="0.1"
+                                    value={ov.start}
+                                    onChange={(e) => patchOverlay(i, { start: Math.max(0, parseFloat(e.target.value) || 0) })}
+                                    className="w-full rounded-lg border border-[#242424] bg-[#141414] px-2 py-1.5 font-mono text-sm text-white focus:border-emerald-400 focus:outline-none"
+                                  />
+                                  <button
+                                    onClick={() => patchOverlay(i, { start: Math.round(currentTime * 10) / 10 })}
+                                    title="Usar o tempo atual do player"
+                                    className="whitespace-nowrap rounded-md px-2 py-1 text-[10px] font-medium text-emerald-400 transition hover:bg-emerald-500/10"
+                                  >
+                                    agora
+                                  </button>
+                                </div>
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-[10px] text-[#a8a8a8]">Some em (s) — 0 = até o fim</label>
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="number" min="0" step="0.1"
+                                    value={ov.end}
+                                    onChange={(e) => patchOverlay(i, { end: Math.max(0, parseFloat(e.target.value) || 0) })}
+                                    className="w-full rounded-lg border border-[#242424] bg-[#141414] px-2 py-1.5 font-mono text-sm text-white focus:border-emerald-400 focus:outline-none"
+                                  />
+                                  <button
+                                    onClick={() => patchOverlay(i, { end: Math.round(currentTime * 10) / 10 })}
+                                    title="Usar o tempo atual do player"
+                                    className="whitespace-nowrap rounded-md px-2 py-1 text-[10px] font-medium text-emerald-400 transition hover:bg-emerald-500/10"
+                                  >
+                                    agora
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   {style.layout === "split_screen" && (
                     <div className="mt-3 rounded-2xl border border-[#242424] bg-[#141414] p-4 space-y-4">
                       {/* Sliders para enquadramento Y superior e inferior */}
@@ -1650,6 +1848,60 @@ export default function EditorPage({
                             className="w-full accent-emerald-400 cursor-pointer"
                           />
                         </div>
+                      </div>
+
+                      {/* Janela de tempo da tela dividida */}
+                      <div className="rounded-xl border border-[#1f1f1f] bg-[#0a0a0a] p-3">
+                        <div className="mb-2 flex items-center justify-between">
+                          <span className="text-xs font-semibold text-[#ededed]">⏱️ Quando a tela dividida aparece</span>
+                          <button
+                            onClick={() => updateStyleAndPersist((s) => ({ ...s, split_screen_start: 0, split_screen_end: 0 }))}
+                            className="rounded-md border border-[#242424] px-2 py-0.5 text-[10px] font-medium text-[#9a9a9a] transition hover:border-[#333] hover:text-white"
+                          >
+                            o vídeo todo
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="mb-1 block text-[10px] text-[#a8a8a8]">Entra em (s)</label>
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="number" min="0" step="0.1"
+                                value={style.split_screen_start ?? 0}
+                                onChange={(e) => updateStyleAndPersist((s) => ({ ...s, split_screen_start: Math.max(0, parseFloat(e.target.value) || 0) }))}
+                                className="w-full rounded-lg border border-[#242424] bg-[#141414] px-2 py-1.5 font-mono text-sm text-white focus:border-emerald-400 focus:outline-none"
+                              />
+                              <button
+                                onClick={() => updateStyleAndPersist((s) => ({ ...s, split_screen_start: Math.round(currentTime * 10) / 10 }))}
+                                title="Usar o tempo atual do player"
+                                className="whitespace-nowrap rounded-md px-2 py-1 text-[10px] font-medium text-emerald-400 transition hover:bg-emerald-500/10"
+                              >
+                                agora
+                              </button>
+                            </div>
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-[10px] text-[#a8a8a8]">Sai em (s) — 0 = até o fim</label>
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="number" min="0" step="0.1"
+                                value={style.split_screen_end ?? 0}
+                                onChange={(e) => updateStyleAndPersist((s) => ({ ...s, split_screen_end: Math.max(0, parseFloat(e.target.value) || 0) }))}
+                                className="w-full rounded-lg border border-[#242424] bg-[#141414] px-2 py-1.5 font-mono text-sm text-white focus:border-emerald-400 focus:outline-none"
+                              />
+                              <button
+                                onClick={() => updateStyleAndPersist((s) => ({ ...s, split_screen_end: Math.round(currentTime * 10) / 10 }))}
+                                title="Usar o tempo atual do player"
+                                className="whitespace-nowrap rounded-md px-2 py-1 text-[10px] font-medium text-emerald-400 transition hover:bg-emerald-500/10"
+                              >
+                                agora
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                        <p className="mt-2 text-[10px] text-[#737373]">
+                          Fora dessa janela o vídeo volta a ocupar a tela inteira.
+                        </p>
                       </div>
 
                       {/* Painel Interativo de Sugestões de B-Roll da IA */}
@@ -2594,6 +2846,34 @@ export default function EditorPage({
                     className="absolute inset-x-0 top-0 bottom-14 z-10 cursor-grab active:cursor-grabbing"
                   />
                 )}
+
+                {/* Anexos — visíveis só dentro da própria janela de tempo, como no render.
+                    Ficam abaixo da legenda (z menor) e podem ser arrastados. */}
+                {overlays.map((ov, i) => {
+                  const visivel = subtitleTime >= ov.start && (ov.end <= 0 || subtitleTime <= ov.end);
+                  if (!visivel) return null;
+                  return (
+                    <img
+                      key={ov.id}
+                      src={getVideoUrl(ov.src)}
+                      alt=""
+                      draggable={false}
+                      onPointerDown={(e) => {
+                        e.preventDefault();
+                        setDraggingOverlay(i);
+                      }}
+                      className={`absolute z-[15] -translate-x-1/2 -translate-y-1/2 cursor-move select-none transition-shadow ${
+                        draggingOverlay === i ? "ring-2 ring-emerald-400" : "hover:ring-1 hover:ring-white/40"
+                      }`}
+                      style={{
+                        left: `${ov.x_percent}%`,
+                        top: `${ov.y_percent}%`,
+                        width: `${ov.width_percent}%`,
+                        opacity: ov.opacity,
+                      }}
+                    />
+                  );
+                })}
 
                 {/* Subtitle Overlay — só DEPOIS dos cortes (na aba Corte a legenda fica
                     de fora; ela entra na aba Estilo já sincronizada com o vídeo cortado) */}

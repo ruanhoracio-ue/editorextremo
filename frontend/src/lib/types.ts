@@ -59,6 +59,19 @@ export interface ColorGradeOptions {
   sharpness: number;
 }
 
+/** Imagem sobreposta ao vídeo, com posição, tamanho e janela de tempo. */
+export interface MediaOverlay {
+  id: string;
+  src: string;
+  x_percent: number;
+  y_percent: number;
+  width_percent: number;
+  start: number;
+  /** 0 = até o fim do vídeo */
+  end: number;
+  opacity: number;
+}
+
 export interface StyleOptions {
   layout: LayoutType;
   subtitle_style: SubtitleStyle;
@@ -98,6 +111,11 @@ export interface StyleOptions {
   rotation?: number;
   /** Altura do vídeo original que fica centrada no recorte (0 = topo, 100 = base). */
   crop_focus_y?: number;
+  /** Janela em que a tela dividida fica no ar (segundos). end = 0 → até o fim. */
+  split_screen_start?: number;
+  split_screen_end?: number;
+  /** Anexos (imagens/PNGs) sobrepostos ao vídeo. */
+  overlays?: MediaOverlay[];
 }
 
 export interface BRollMediaOption {
@@ -178,6 +196,9 @@ export const DEFAULT_STYLE_OPTIONS: StyleOptions = {
   split_screen_framing_y_bottom: 50.0,
   rotation: 0,
   crop_focus_y: 35.0,
+  split_screen_start: 0,
+  split_screen_end: 0,
+  overlays: [],
 };
 
 export const STATUS_LABELS: Record<JobStatus, string> = {

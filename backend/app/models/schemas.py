@@ -85,6 +85,20 @@ class ColorGradeOptions(BaseModel):
     sharpness: float = Field(default=0.0, ge=0.0, le=2.0)
 
 
+# ---------- Anexos (imagem/PNG sobreposta) ----------
+
+class MediaOverlay(BaseModel):
+    """Imagem sobreposta ao vídeo, com posição, tamanho e janela de tempo."""
+    id: str
+    src: str                                                   # /storage/<job>/overlay_x.png
+    x_percent: float = Field(default=50.0, ge=0.0, le=100.0)   # centro do anexo
+    y_percent: float = Field(default=50.0, ge=0.0, le=100.0)
+    width_percent: float = Field(default=30.0, ge=2.0, le=100.0)
+    start: float = Field(default=0.0, ge=0.0)
+    end: float = Field(default=0.0, ge=0.0)                    # 0 = até o fim do vídeo
+    opacity: float = Field(default=1.0, ge=0.0, le=1.0)
+
+
 # ---------- Style Options ----------
 
 class StyleOptions(BaseModel):
@@ -128,6 +142,13 @@ class StyleOptions(BaseModel):
     split_screen_images: List[str] = Field(default_factory=list)
     split_screen_framing_y: float = Field(default=50.0, ge=0.0, le=100.0)
     split_screen_framing_y_bottom: float = Field(default=50.0, ge=0.0, le=100.0)
+    # Janela em que a tela dividida fica no ar (segundos do vídeo limpo).
+    # end = 0 significa "até o fim"; fora da janela o vídeo volta a tela cheia.
+    split_screen_start: float = Field(default=0.0, ge=0.0)
+    split_screen_end: float = Field(default=0.0, ge=0.0)
+
+    # Anexos (imagens/PNGs) sobrepostos ao vídeo
+    overlays: List[MediaOverlay] = Field(default_factory=list)
     auto_broll_enabled: bool = False
 
 

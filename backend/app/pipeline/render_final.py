@@ -134,6 +134,42 @@ def _blur_bg_filter(main_src: str, canvas_w: int, canvas_h: int, out_label: str)
     )
 
 
+_STORAGE_ROOT = Path(__file__).resolve().parent.parent.parent / "storage"
+
+
+def _resolve_media_path(ref: Optional[str]) -> Optional[str]:
+    """Converte a referência guardada no job em caminho de arquivo real.
+
+    O que fica salvo pode ser a URL web (`/storage/<job>/<arquivo>`) ou um caminho
+    absoluto antigo, de quando o projeto morava em outra pasta. Nos dois casos
+    ancoramos pelo trecho `storage/...`, que é estável.
+    """
+    if not ref:
+        return None
+    if os.path.isabs(ref) and os.path.exists(ref):
+        return ref
+    marker = "storage/"
+    idx = ref.replace("\\", "/").find(marker)
+    if idx != -1:
+        candidate = _STORAGE_ROOT / ref.replace("\\", "/")[idx + len(marker):]
+        if candidate.exists():
+            return str(candidate)
+    return ref if os.path.exists(ref) else None
+
+
+def _time_window_expr(start: float, end: float) -> Optional[str]:
+    """Expressão `enable` do FFmpeg para uma janela de tempo. None = sempre visível."""
+    start = max(0.0, float(start or 0.0))
+    end = float(end or 0.0)
+    if start <= 0 and end <= 0:
+        return None
+    if end <= 0:
+        return f"gte(t,{start:.3f})"
+    if end <= start:
+        return None
+    return f"between(t,{start:.3f},{end:.3f})"
+
+
 def _get_canvas_dimensions(aspect_ratio: str) -> tuple[int, int]:
     if aspect_ratio == "4:5":
         return 1080, 1350
@@ -176,31 +212,48 @@ def render_final_video(
     crop_y = _crop_y_expr(style_options)
 
     # --- Split Screen Layout (Clean 50/50 vertical stack with framing Y) ---
-    if style_options.layout == "split_screen" and style_options.split_screen_image:
-        img_path = style_options.split_screen_image
-        if os.path.exists(img_path):
-            ext = os.path.splitext(img_path)[1].lower()
-            if ext in (".jpg", ".jpeg", ".png", ".webp", ".bmp"):
-                input_args.extend(["-loop", "1", "-i", img_path])
-            else:
-                input_args.extend(["-stream_loop", "-1", "-i", img_path])
+    split_img = _resolve_media_path(style_options.split_screen_image) if style_options.layout == "split_screen" else None
+    next_input = 1  # índice do próximo -i (0 é o vídeo principal)
 
-            framing_y_top = getattr(style_options, "split_screen_framing_y", 50.0)
-            framing_y_bot = getattr(style_options, "split_screen_framing_y_bottom", 50.0)
-            half_h = canvas_h // 2
-            crop_y_top = f"(in_h-{half_h})*{framing_y_top/100.0:.2f}"
-            crop_y_bot = f"(in_h-{half_h})*{framing_y_bot/100.0:.2f}"
+    if split_img:
+        ext = os.path.splitext(split_img)[1].lower()
+        if ext in (".jpg", ".jpeg", ".png", ".webp", ".bmp"):
+            input_args.extend(["-loop", "1", "-i", split_img])
+        else:
+            input_args.extend(["-stream_loop", "-1", "-i", split_img])
+        split_idx = next_input
+        next_input += 1
 
+        framing_y_top = getattr(style_options, "split_screen_framing_y", 50.0)
+        framing_y_bot = getattr(style_options, "split_screen_framing_y_bottom", 50.0)
+        half_h = canvas_h // 2
+        crop_y_top = f"(in_h-{half_h})*{framing_y_top/100.0:.2f}"
+        crop_y_bot = f"(in_h-{half_h})*{framing_y_bot/100.0:.2f}"
+
+        split_window = _time_window_expr(
+            getattr(style_options, "split_screen_start", 0.0),
+            getattr(style_options, "split_screen_end", 0.0),
+        )
+
+        split_build = (
+            f"[{split_idx}:v]scale={canvas_w}:-1:flags=lanczos,crop={canvas_w}:{half_h}:0:'{crop_y_top}',setsar=1[top];"
+            f"{main_src}split=2[mainfull][mainsplit];"
+            f"[mainsplit]scale={canvas_w}:{half_h}:force_original_aspect_ratio=increase:flags=lanczos,"
+            f"crop={canvas_w}:{half_h}:0:'{crop_y_bot}',setsar=1[bot];"
+            f"[top][bot]vstack=inputs=2[splitv]"
+        )
+
+        if split_window:
+            # Fora da janela o vídeo volta a ocupar a tela toda: compomos a versão
+            # tela cheia por baixo e sobrepomos a tela dividida só durante a janela.
             filters.append(
-                f"[1:v]scale={canvas_w}:-1:flags=lanczos,crop={canvas_w}:{half_h}:0:'{crop_y_top}',setsar=1[top];"
-                f"{main_src}scale={canvas_w}:{half_h}:force_original_aspect_ratio=increase:flags=lanczos,crop={canvas_w}:{half_h}:0:'{crop_y_bot}',setsar=1[bot];"
-                f"[top][bot]vstack=inputs=2[base_canvas]"
+                split_build + ";"
+                f"[mainfull]scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=increase:flags=lanczos,"
+                f"crop={canvas_w}:{canvas_h}:(in_w-out_w)/2:'{crop_y}',setsar=1[fullv];"
+                f"[fullv][splitv]overlay=0:0:enable='{split_window}'[base_canvas]"
             )
         else:
-            filters.append(
-                f"{main_src}scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=increase:flags=lanczos,"
-                f"crop={canvas_w}:{canvas_h}:(in_w-out_w)/2:'{crop_y}',setsar=1[base_canvas]"
-            )
+            filters.append(split_build + ";[splitv]null[base_canvas]")
     elif use_blur_bg:
         filters.append(_blur_bg_filter(main_src, canvas_w, canvas_h, "base_canvas"))
     else:
@@ -218,6 +271,40 @@ def render_final_video(
         if zoom_filter:
             filters.append(f"[{current_label}]{zoom_filter}[zoomed_canvas]")
             current_label = "zoomed_canvas"
+
+    # --- Anexos (imagens sobrepostas) ---
+    # Depois do zoom (um logo/selo não deve pulsar junto) e antes da legenda,
+    # para a legenda ficar sempre por cima do anexo.
+    for ov in (getattr(style_options, "overlays", None) or []):
+        ov_path = _resolve_media_path(getattr(ov, "src", None))
+        if not ov_path:
+            continue
+        ov_ext = os.path.splitext(ov_path)[1].lower()
+        if ov_ext in (".mp4", ".mov", ".webm", ".mkv", ".avi"):
+            input_args.extend(["-stream_loop", "-1", "-i", ov_path])
+        else:
+            input_args.extend(["-loop", "1", "-i", ov_path])
+        ov_idx = next_input
+        next_input += 1
+
+        ov_w = max(2, int(canvas_w * max(2.0, min(100.0, ov.width_percent)) / 100.0))
+        ov_w -= ov_w % 2
+        opacity = max(0.0, min(1.0, getattr(ov, "opacity", 1.0)))
+        # Preserva o canal alpha do PNG e aplica a opacidade escolhida
+        prep = f"[{ov_idx}:v]scale={ov_w}:-1:flags=lanczos,format=rgba"
+        if opacity < 1.0:
+            prep += f",colorchannelmixer=aa={opacity:.3f}"
+        prep += f"[ovp{ov_idx}]"
+
+        x_expr = f"(W*{ov.x_percent/100.0:.4f})-(w/2)"
+        y_expr = f"(H*{ov.y_percent/100.0:.4f})-(h/2)"
+        window = _time_window_expr(ov.start, ov.end)
+        overlay_args = f"overlay={x_expr}:{y_expr}:format=auto"
+        if window:
+            overlay_args += f":enable='{window}'"
+        out_label = f"ovout{ov_idx}"
+        filters.append(f"{prep};[{current_label}][ovp{ov_idx}]{overlay_args}[{out_label}]")
+        current_label = out_label
 
     # --- Subtitles ASS ---
     if style_options.subtitle_style == "basic" and transcript:
