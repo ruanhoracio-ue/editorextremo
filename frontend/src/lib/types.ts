@@ -1,4 +1,4 @@
-/* Editu TypeScript Types */
+/* EditorExtremo TypeScript Types */
 
 export type JobStatus =
   | "queued"

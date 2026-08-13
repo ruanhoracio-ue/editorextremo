@@ -1,6 +1,6 @@
 @echo off
 REM ==========================================================
-REM  EDITU - Atalho para abrir o app (Windows)
+REM  EDITOREXTREMO - Atalho para abrir o app (Windows)
 REM  De dois cliques neste arquivo para comecar a editar.
 REM ==========================================================
 setlocal enabledelayedexpansion
@@ -8,7 +8,7 @@ cd /d "%~dp0"
 chcp 65001 >nul
 
 echo.
-echo  Iniciando o Editu...
+echo  Iniciando o EditorExtremo...
 echo.
 
 REM 1) Garante que o Docker Desktop esta rodando
@@ -35,7 +35,9 @@ exit /b 1
 :ready
 REM 2) Limpa restos de execucoes anteriores (evita "container name already in use").
 REM    NAO perde nada: videos e modelo de IA ficam em volumes nomeados do Docker.
-docker rm -f editu-backend editu-frontend >nul 2>&1
+REM    Os nomes "editu-*" sao da versao antiga do app: quem ja rodou aquela versao
+REM    ainda tem esses containers segurando as portas 3000/8000.
+docker rm -f editorextremo-backend editorextremo-frontend editu-backend editu-frontend >nul 2>&1
 
 REM 3) Confere se as portas 3000 e 8000 estao livres (mensagem clara em vez do erro do Docker)
 set "PORTA="
@@ -44,7 +46,7 @@ netstat -ano | findstr LISTENING | findstr /C:":8000 " >nul 2>&1 && set "PORTA=8
 if defined PORTA (
   echo.
   echo  [ERRO] A porta %PORTA% ja esta sendo usada por outro programa neste computador.
-  echo         O Editu precisa das portas 3000 e 8000 livres.
+  echo         O EditorExtremo precisa das portas 3000 e 8000 livres.
   echo.
   echo         ^> Feche o outro programa que usa a porta %PORTA%
   echo           ^(ou reinicie o computador^) e rode este atalho de novo.
@@ -74,7 +76,7 @@ for %%I in (python:3.11-slim node:20-slim) do (
     )
     if "!BAIXOU!"=="0" (
       echo.
-      echo  [ERRO] Nao consegui baixar os componentes que o Editu precisa.
+      echo  [ERRO] Nao consegui baixar os componentes que o EditorExtremo precisa.
       echo         Isso quase sempre e a conexao com a internet.
       echo.
       echo         ^> Confira se a internet esta funcionando
@@ -98,7 +100,7 @@ if errorlevel 1 (
   docker compose up -d --build --remove-orphans
   if errorlevel 1 (
     echo.
-    echo  [ERRO] Nao consegui iniciar o Editu.
+    echo  [ERRO] Nao consegui iniciar o EditorExtremo.
     echo         Se apareceu "deadline exceeded" ou "failed to solve" acima, foi a
     echo         internet: espere um pouco e rode este atalho de novo
     echo         ^(o que ja baixou fica salvo^).
@@ -111,7 +113,7 @@ if errorlevel 1 (
 )
 
 REM 6) Abre no navegador
-echo  Tudo pronto! Abrindo o Editu no navegador...
+echo  Tudo pronto! Abrindo o EditorExtremo no navegador...
 timeout /t 3 >nul
 start "" http://localhost:3000
 

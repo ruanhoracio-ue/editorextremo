@@ -2654,7 +2654,7 @@ export default function EditorPage({
                           return (
                             <button
                               key={fmt}
-                              onClick={() => downloadFile(getDownloadUrl(jobId, fname), `editu_video_${fmt.replace(":", "_")}.mp4`)}
+                              onClick={() => downloadFile(getDownloadUrl(jobId, fname), `editorextremo_video_${fmt.replace(":", "_")}.mp4`)}
                               className="flex items-center justify-between rounded-xl bg-emerald-500/10 border border-emerald-500/30 px-4 py-3 text-xs font-bold text-emerald-300 hover:bg-emerald-500/20 transition"
                             >
                               <span>📱 Formato {fmt}</span>
@@ -2666,7 +2666,7 @@ export default function EditorPage({
 
                       {job.batch_zip_url && (
                         <button
-                          onClick={() => downloadFile(getDownloadUrl(jobId, "export_batch.zip"), "editu_videos_lote.zip")}
+                          onClick={() => downloadFile(getDownloadUrl(jobId, "export_batch.zip"), "editorextremo_videos_lote.zip")}
                           className="flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-gradient py-3.5 text-sm font-extrabold text-[#0a0a0a] hover:opacity-90 transition mt-2"
                         >
                           📦 Baixar Pacote Completo ZIP (.zip)
@@ -2678,7 +2678,7 @@ export default function EditorPage({
                   {/* Single Download Fallback */}
                   {job.final_video_url && (!job.batch_videos || Object.keys(job.batch_videos).length === 0) && (
                     <button
-                      onClick={() => downloadFile(getDownloadUrl(jobId, job.final_video_url?.split("/").pop() || "final_video.mp4"), "editu_video_final.mp4")}
+                      onClick={() => downloadFile(getDownloadUrl(jobId, job.final_video_url?.split("/").pop() || "final_video.mp4"), "editorextremo_video_final.mp4")}
                       data-testid="download-final"
                       className="flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-gradient py-3.5 text-sm font-extrabold text-[#0a0a0a] hover:opacity-90 transition"
                     >

@@ -534,7 +534,7 @@ def _generate_ass_subtitles(
         primary_color = "&H00FFFFFF"
 
     header = f"""[Script Info]
-Title: Editu Subtitles
+Title: EditorExtremo Subtitles
 ScriptType: v4.00+
 PlayResX: {canvas_w}
 PlayResY: {canvas_h}

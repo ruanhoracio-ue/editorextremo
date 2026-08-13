@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import EdituLogoLoader from "./EdituLogoLoader";
+import EditorExtremoLogoLoader from "./EditorExtremoLogoLoader";
 
 export default function InitialSplashScreen({
   children,
@@ -40,7 +40,7 @@ export default function InitialSplashScreen({
             }}
           />
 
-          <EdituLogoLoader size="lg" />
+          <EditorExtremoLogoLoader size="lg" />
         </div>
       )}
       {children}

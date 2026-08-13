@@ -1,4 +1,4 @@
-# Editu — Frontend (Next.js)
+# EditorExtremo — Frontend (Next.js)
 FROM node:20-slim
 
 WORKDIR /app

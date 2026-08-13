@@ -2,17 +2,17 @@
 
 import React, { useEffect, useState } from "react";
 
-interface EdituLogoLoaderProps {
+interface EditorExtremoLogoLoaderProps {
   className?: string;
   size?: "sm" | "md" | "lg" | "full";
   onComplete?: () => void;
 }
 
-export default function EdituLogoLoader({
+export default function EditorExtremoLogoLoader({
   className = "",
   size = "md",
   onComplete,
-}: EdituLogoLoaderProps) {
+}: EditorExtremoLogoLoaderProps) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -44,7 +44,7 @@ export default function EdituLogoLoader({
       >
         <img
           src="/logo.svg"
-          alt="Editu Logo"
+          alt="EditorExtremo Logo"
           className={`${sizeClasses[size]} w-auto object-contain drop-shadow-[0_0_35px_rgba(16,185,129,0.85)]`}
         />
       </div>

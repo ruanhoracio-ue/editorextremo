@@ -1,4 +1,4 @@
-# Editu — Backend (FastAPI + faster-whisper + FFmpeg)
+# EditorExtremo — Backend (FastAPI + faster-whisper + FFmpeg)
 FROM python:3.11-slim
 
 # FFmpeg (inclui ffprobe) para corte/render e detecção de duração

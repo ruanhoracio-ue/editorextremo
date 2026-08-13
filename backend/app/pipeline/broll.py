@@ -64,7 +64,7 @@ def fetch_auto_broll_image(
         "&gsrnamespace=6&gsrlimit=5&prop=imageinfo&iiprop=url|size&format=json"
     )
 
-    req = urllib.request.Request(url, headers={"User-Agent": "EdituApp/1.0 (contact@editu.app)"})
+    req = urllib.request.Request(url, headers={"User-Agent": "EditorExtremoApp/1.0 (contact@editorextremo.app)"})
 
     try:
         with urllib.request.urlopen(req, timeout=8) as resp:
@@ -81,7 +81,7 @@ def fetch_auto_broll_image(
                     image_urls.append(img_url)
 
         if image_urls:
-            dl_req = urllib.request.Request(image_urls[0], headers={"User-Agent": "EdituApp/1.0 (contact@editu.app)"})
+            dl_req = urllib.request.Request(image_urls[0], headers={"User-Agent": "EditorExtremoApp/1.0 (contact@editorextremo.app)"})
             with urllib.request.urlopen(dl_req, timeout=12) as dl_resp, open(target_file, "wb") as f:
                 f.write(dl_resp.read())
             print(f"✅ Auto B-Roll image downloaded from Wikimedia: {target_file}")

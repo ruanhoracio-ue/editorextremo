@@ -1,11 +1,11 @@
 #!/bin/bash
 # ==========================================================
-#  EDITU — Atalho para abrir o app (Mac)
+#  EDITOREXTREMO — Atalho para abrir o app (Mac)
 #  Dê dois cliques neste arquivo para começar a editar.
 # ==========================================================
 cd "$(dirname "$0")"
 
-echo "🎬  Iniciando o Editu..."
+echo "🎬  Iniciando o EditorExtremo..."
 echo
 
 # 1) Garante que o Docker Desktop está rodando
@@ -28,7 +28,10 @@ fi
 
 # 2) Limpa restos de execuções anteriores (evita "container name already in use").
 #    NÃO perde nada: os vídeos e o modelo de IA ficam em volumes nomeados do Docker.
-docker rm -f editu-backend editu-frontend >/dev/null 2>&1
+#    Os nomes "editu-*" são da versão antiga do app: quem já rodou aquela versão
+#    ainda tem esses containers segurando as portas 3000/8000, e sem removê-los
+#    aqui o aluno veria "porta em uso" sem entender o motivo.
+docker rm -f editorextremo-backend editorextremo-frontend editu-backend editu-frontend >/dev/null 2>&1
 
 # 3) Confere se as portas 3000 e 8000 estão livres — se outro programa estiver
 #    usando, mostramos uma mensagem clara em vez do erro técnico do Docker.
@@ -36,7 +39,7 @@ for PORT in 3000 8000; do
   if lsof -iTCP:$PORT -sTCP:LISTEN -n -P >/dev/null 2>&1; then
     echo
     echo "❌  A porta $PORT já está sendo usada por outro programa neste computador."
-    echo "    O Editu precisa das portas 3000 e 8000 livres."
+    echo "    O EditorExtremo precisa das portas 3000 e 8000 livres."
     echo
     echo "    ➜  Feche o outro programa que está usando a porta $PORT"
     echo "       (ou simplesmente reinicie o computador) e rode este atalho de novo."
@@ -63,7 +66,7 @@ for IMG in python:3.11-slim node:20-slim; do
   done
   if [ "$BAIXOU" -ne 1 ]; then
     echo
-    echo "❌  Não consegui baixar os componentes que o Editu precisa."
+    echo "❌  Não consegui baixar os componentes que o EditorExtremo precisa."
     echo "    Isso quase sempre é a conexão com a internet."
     echo
     echo "    ➜  Confira se a internet está funcionando"
@@ -84,7 +87,7 @@ if ! docker compose up -d --build --remove-orphans; then
   sleep 10
   if ! docker compose up -d --build --remove-orphans; then
     echo
-    echo "❌  Não consegui iniciar o Editu."
+    echo "❌  Não consegui iniciar o EditorExtremo."
     echo "    Se apareceu 'deadline exceeded' ou 'failed to solve' acima, foi a internet:"
     echo "    espere um pouco e rode este atalho de novo (o que já baixou fica salvo)."
     echo
@@ -96,7 +99,7 @@ if ! docker compose up -d --build --remove-orphans; then
 fi
 
 # 6) Abre no navegador
-echo "✅  Tudo pronto! Abrindo o Editu no navegador..."
+echo "✅  Tudo pronto! Abrindo o EditorExtremo no navegador..."
 sleep 3
 open http://localhost:3000
 

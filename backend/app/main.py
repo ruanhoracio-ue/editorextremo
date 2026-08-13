@@ -1,4 +1,4 @@
-"""Editu Backend — FastAPI Application Entry Point."""
+"""EditorExtremo Backend — FastAPI Application Entry Point."""
 
 import mimetypes
 from pathlib import Path
@@ -14,7 +14,7 @@ from app.api.render import router as render_router
 
 
 app = FastAPI(
-    title="Editu API",
+    title="EditorExtremo API",
     description="API para edição automática de vídeos curtos",
     version="1.0.0",
 )
@@ -125,7 +125,7 @@ async def serve_storage(file_path: str, request: Request):
 @app.get("/")
 async def root():
     return {
-        "app": "Editu",
+        "app": "EditorExtremo",
         "version": "1.0.0",
         "status": "running",
         "docs": "/docs",

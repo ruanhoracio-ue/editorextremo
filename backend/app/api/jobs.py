@@ -472,7 +472,7 @@ def _run_batch_render_pipeline(job: Job, formats: List[str]):
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
             for fname, fpath in rendered_files:
                 if os.path.exists(fpath):
-                    zipf.write(fpath, arcname=f"editu_video_{fname}")
+                    zipf.write(fpath, arcname=f"editorextremo_video_{fname}")
 
         batch_zip_url = get_url(job.id, zip_filename)
         first_video_path = rendered_files[0][1] if rendered_files else None
