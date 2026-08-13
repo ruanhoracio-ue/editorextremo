@@ -103,6 +103,7 @@ Para desligar o app e liberar o computador:
 | A página abriu com erro logo de cara | Aguarde **~30 segundos** e **atualize** a página (F5). Na primeira vez o app ainda está "aquecendo". |
 | O navegador não abriu sozinho | Abra o navegador e digite: **http://localhost:3000** |
 | Disse que o **Docker não iniciou** | Abra o **Docker Desktop**, espere a baleia 🐳 ficar verde, e rode o atalho **Editu** de novo. |
+| Apareceu **"Não consegui baixar os componentes"**, ou erros com **"deadline exceeded"** / **"failed to solve"** | É a internet. Na primeira vez o Editu precisa baixar algumas peças. **Espere um pouco e rode o atalho de novo** — o que já baixou fica salvo e ele continua de onde parou. Em rede de empresa ou faculdade o download costuma ser bloqueado: tente pelo **Wi-Fi de casa** ou pela **internet do celular**. |
 | No Mac apareceu aviso de segurança ("não foi possível verificar…" ou "desenvolvedor não identificado") | **Não** clique em "Mover para o Lixo". Botão **direito** no `Editu.command` → **Abrir** → **Abrir**. Se só aparecer "Lixo/OK": **OK** → **Ajustes do Sistema → Privacidade e Segurança** → **"Abrir Mesmo Assim"**. (Só na primeira vez.) |
 | A transcrição/edição está **demorando** | É normal em vídeos maiores — o computador está processando com IA. Vídeos curtos são bem mais rápidos. |
 | Nada funcionou | Tire um **print da janela preta** com a mensagem de erro e envie para o suporte. |

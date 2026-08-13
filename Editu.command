@@ -46,15 +46,56 @@ for PORT in 3000 8000; do
   fi
 done
 
-# 4) Sobe o app (na PRIMEIRA vez baixa/monta tudo e pode levar alguns minutos)
+# 4) Baixa as peças-base ANTES de montar o app.
+#    O Docker responde que está pronto (docker info) antes da rede dele estar de
+#    fato funcionando, e o build tem um limite curto de tempo: se a internet
+#    estiver lenta nesse momento, ele morre com "context deadline exceeded".
+#    Baixando aqui, com tentativas, o build só começa quando as peças já existem.
 echo "⚙️   Preparando o app... (a PRIMEIRA vez demora alguns minutos — nas próximas é rápido)"
-docker compose up -d --build --remove-orphans || {
-  echo "❌  Algo deu errado ao iniciar. Tire um print desta tela e envie para o suporte."
-  read -p "Pressione ENTER para fechar."
-  exit 1
-}
 
-# 5) Abre no navegador
+for IMG in python:3.11-slim node:20-slim; do
+  docker image inspect "$IMG" >/dev/null 2>&1 && continue
+  BAIXOU=0
+  for TENTATIVA in 1 2 3; do
+    echo "    ⬇️   Baixando componentes ($IMG) — tentativa $TENTATIVA de 3..."
+    if docker pull "$IMG" >/dev/null 2>&1; then BAIXOU=1; break; fi
+    sleep 8
+  done
+  if [ "$BAIXOU" -ne 1 ]; then
+    echo
+    echo "❌  Não consegui baixar os componentes que o Editu precisa."
+    echo "    Isso quase sempre é a conexão com a internet."
+    echo
+    echo "    ➜  Confira se a internet está funcionando"
+    echo "    ➜  Se estiver em rede de empresa/universidade, tente por outra rede"
+    echo "       (o Wi-Fi de casa ou a internet do celular costumam resolver)"
+    echo "    ➜  Depois é só rodar este atalho de novo — o que já baixou não baixa outra vez"
+    echo
+    read -p "Pressione ENTER para fechar."
+    exit 1
+  fi
+done
+
+# 5) Monta e sobe o app. Uma segunda tentativa cobre falhas passageiras de rede.
+echo "🔧  Montando o app..."
+if ! docker compose up -d --build --remove-orphans; then
+  echo
+  echo "⚠️   Primeira tentativa falhou. Tentando de novo em 10 segundos..."
+  sleep 10
+  if ! docker compose up -d --build --remove-orphans; then
+    echo
+    echo "❌  Não consegui iniciar o Editu."
+    echo "    Se apareceu 'deadline exceeded' ou 'failed to solve' acima, foi a internet:"
+    echo "    espere um pouco e rode este atalho de novo (o que já baixou fica salvo)."
+    echo
+    echo "    Se o erro for outro, tire um print desta tela e envie para o suporte."
+    echo
+    read -p "Pressione ENTER para fechar."
+    exit 1
+  fi
+fi
+
+# 6) Abre no navegador
 echo "✅  Tudo pronto! Abrindo o Editu no navegador..."
 sleep 3
 open http://localhost:3000
