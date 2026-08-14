@@ -1,10 +1,13 @@
 # EditorExtremo — Ambiente completo para rodar na máquina do aluno.
 # Sobe o backend (processamento de vídeo) e o frontend (a tela do app).
 # O aluno não precisa mexer aqui: os atalhos EditorExtremo já cuidam de tudo.
+#
+# As imagens vêm prontas do Docker Hub: a máquina do aluno só baixa, não monta
+# nada. Para publicar uma versão nova, rode ./publicar-imagens.command.
 
 services:
   backend:
-    build: ./backend
+    image: SEU_USUARIO_DOCKERHUB/editorextremo-backend:latest
     container_name: editorextremo-backend
     ports:
       - "8000:8000"
@@ -16,7 +19,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    build: ./frontend
+    image: SEU_USUARIO_DOCKERHUB/editorextremo-frontend:latest
     container_name: editorextremo-frontend
     ports:
       - "3000:3000"

@@ -49,24 +49,32 @@ for PORT in 3000 8000; do
   fi
 done
 
-# 4) Baixa as peças-base ANTES de montar o app.
-#    O Docker responde que está pronto (docker info) antes da rede dele estar de
-#    fato funcionando, e o build tem um limite curto de tempo: se a internet
-#    estiver lenta nesse momento, ele morre com "context deadline exceeded".
-#    Baixando aqui, com tentativas, o build só começa quando as peças já existem.
-echo "⚙️   Preparando o app... (a PRIMEIRA vez demora alguns minutos — nas próximas é rápido)"
+# 4) Baixa o app (e as atualizações). As imagens vêm PRONTAS do Docker Hub:
+#    esta máquina só baixa, não monta nada — era o montar que travava antes.
+#    Se o download falhar mas o app já estiver baixado de uma vez anterior,
+#    seguimos com o que existe: sem internet o aluno ainda consegue trabalhar.
+echo "⚙️   Buscando o app... (a PRIMEIRA vez demora alguns minutos — nas próximas é rápido)"
 
-for IMG in python:3.11-slim node:20-slim; do
-  docker image inspect "$IMG" >/dev/null 2>&1 && continue
-  BAIXOU=0
-  for TENTATIVA in 1 2 3; do
-    echo "    ⬇️   Baixando componentes ($IMG) — tentativa $TENTATIVA de 3..."
-    if docker pull "$IMG" >/dev/null 2>&1; then BAIXOU=1; break; fi
-    sleep 8
+BAIXOU=0
+for TENTATIVA in 1 2 3; do
+  [ "$TENTATIVA" -gt 1 ] && echo "    ⬇️   Tentativa $TENTATIVA de 3..."
+  if docker compose pull; then BAIXOU=1; break; fi
+  sleep 8
+done
+
+if [ "$BAIXOU" -ne 1 ]; then
+  JA_TEM=1
+  for IMG in $(docker compose config --images 2>/dev/null); do
+    docker image inspect "$IMG" >/dev/null 2>&1 || JA_TEM=0
   done
-  if [ "$BAIXOU" -ne 1 ]; then
+  if [ "$JA_TEM" -eq 1 ]; then
     echo
-    echo "❌  Não consegui baixar os componentes que o EditorExtremo precisa."
+    echo "⚠️   Não consegui verificar se há versão nova (internet fora do ar?)."
+    echo "    Sem problema: abrindo a versão que já está neste computador."
+    echo
+  else
+    echo
+    echo "❌  Não consegui baixar o EditorExtremo."
     echo "    Isso quase sempre é a conexão com a internet."
     echo
     echo "    ➜  Confira se a internet está funcionando"
@@ -77,21 +85,18 @@ for IMG in python:3.11-slim node:20-slim; do
     read -p "Pressione ENTER para fechar."
     exit 1
   fi
-done
+fi
 
-# 5) Monta e sobe o app. Uma segunda tentativa cobre falhas passageiras de rede.
-echo "🔧  Montando o app..."
-if ! docker compose up -d --build --remove-orphans; then
+# 5) Sobe o app. Uma segunda tentativa cobre falhas passageiras.
+echo "🔧  Iniciando..."
+if ! docker compose up -d --remove-orphans; then
   echo
   echo "⚠️   Primeira tentativa falhou. Tentando de novo em 10 segundos..."
   sleep 10
-  if ! docker compose up -d --build --remove-orphans; then
+  if ! docker compose up -d --remove-orphans; then
     echo
     echo "❌  Não consegui iniciar o EditorExtremo."
-    echo "    Se apareceu 'deadline exceeded' ou 'failed to solve' acima, foi a internet:"
-    echo "    espere um pouco e rode este atalho de novo (o que já baixou fica salvo)."
-    echo
-    echo "    Se o erro for outro, tire um print desta tela e envie para o suporte."
+    echo "    Tire um print desta tela e envie para o suporte."
     echo
     read -p "Pressione ENTER para fechar."
     exit 1

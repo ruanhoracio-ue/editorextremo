@@ -55,57 +55,59 @@ if defined PORTA (
   exit /b 1
 )
 
-REM 4) Baixa as pecas-base ANTES de montar o app.
-REM    O Docker responde que esta pronto antes da rede dele estar funcionando, e o
-REM    build tem um limite curto de tempo: com internet lenta ele morre com
-REM    "context deadline exceeded". Baixando aqui, com tentativas, o build so
-REM    comeca quando as pecas ja existem.
-echo  Preparando o app... (a PRIMEIRA vez demora alguns minutos - nas proximas e rapido)
+REM 4) Baixa o app (e as atualizacoes). As imagens vem PRONTAS do Docker Hub:
+REM    esta maquina so baixa, nao monta nada - era o montar que travava antes.
+REM    Se o download falhar mas o app ja estiver baixado, seguimos com o que existe.
+echo  Buscando o app... (a PRIMEIRA vez demora alguns minutos - nas proximas e rapido)
 
-for %%I in (python:3.11-slim node:20-slim) do (
-  docker image inspect %%I >nul 2>&1
-  if errorlevel 1 (
-    set BAIXOU=0
-    for %%T in (1 2 3) do (
-      if "!BAIXOU!"=="0" (
-        echo     Baixando componentes ^(%%I^) - tentativa %%T de 3...
-        docker pull %%I >nul 2>&1
-        if not errorlevel 1 set BAIXOU=1
-        if "!BAIXOU!"=="0" timeout /t 8 >nul
-      )
-    )
-    if "!BAIXOU!"=="0" (
-      echo.
-      echo  [ERRO] Nao consegui baixar os componentes que o EditorExtremo precisa.
-      echo         Isso quase sempre e a conexao com a internet.
-      echo.
-      echo         ^> Confira se a internet esta funcionando
-      echo         ^> Se estiver em rede de empresa/faculdade, tente outra rede
-      echo           ^(o Wi-Fi de casa ou a internet do celular costumam resolver^)
-      echo         ^> Depois rode este atalho de novo - o que ja baixou nao baixa outra vez
-      echo.
-      pause
-      exit /b 1
-    )
+set BAIXOU=0
+for %%T in (1 2 3) do (
+  if "!BAIXOU!"=="0" (
+    if not "%%T"=="1" echo     Tentativa %%T de 3...
+    docker compose pull
+    if not errorlevel 1 set BAIXOU=1
+    if "!BAIXOU!"=="0" timeout /t 8 >nul
   )
 )
 
-REM 5) Monta e sobe o app. Uma segunda tentativa cobre falhas passageiras de rede.
-echo  Montando o app...
-docker compose up -d --build --remove-orphans
+if "!BAIXOU!"=="0" (
+  set JA_TEM=1
+  for /f "delims=" %%I in ('docker compose config --images 2^>nul') do (
+    docker image inspect %%I >nul 2>&1
+    if errorlevel 1 set JA_TEM=0
+  )
+  if "!JA_TEM!"=="1" (
+    echo.
+    echo  Nao consegui verificar se ha versao nova ^(internet fora do ar?^).
+    echo  Sem problema: abrindo a versao que ja esta neste computador.
+    echo.
+  ) else (
+    echo.
+    echo  [ERRO] Nao consegui baixar o EditorExtremo.
+    echo         Isso quase sempre e a conexao com a internet.
+    echo.
+    echo         ^> Confira se a internet esta funcionando
+    echo         ^> Se estiver em rede de empresa/faculdade, tente outra rede
+    echo           ^(o Wi-Fi de casa ou a internet do celular costumam resolver^)
+    echo         ^> Depois rode este atalho de novo - o que ja baixou nao baixa outra vez
+    echo.
+    pause
+    exit /b 1
+  )
+)
+
+REM 5) Sobe o app. Uma segunda tentativa cobre falhas passageiras.
+echo  Iniciando...
+docker compose up -d --remove-orphans
 if errorlevel 1 (
   echo.
   echo  Primeira tentativa falhou. Tentando de novo em 10 segundos...
   timeout /t 10 >nul
-  docker compose up -d --build --remove-orphans
+  docker compose up -d --remove-orphans
   if errorlevel 1 (
     echo.
     echo  [ERRO] Nao consegui iniciar o EditorExtremo.
-    echo         Se apareceu "deadline exceeded" ou "failed to solve" acima, foi a
-    echo         internet: espere um pouco e rode este atalho de novo
-    echo         ^(o que ja baixou fica salvo^).
-    echo.
-    echo         Se o erro for outro, tire um print desta tela e envie para o suporte.
+    echo         Tire um print desta tela e envie para o suporte.
     echo.
     pause
     exit /b 1
